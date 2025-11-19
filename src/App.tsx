@@ -6,6 +6,8 @@ import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import {PrivateRoute} from "./routers/PrivateRouter";
 import UserPage from "./pages/Admin/UserPage";
+import DashboardPage from "./pages/Admin/DashboardPage";
+import AccountPage from "./pages/Admin/AccountPage";
 
 export default function App() {
   return (
@@ -19,7 +21,9 @@ export default function App() {
         <Route element={<PrivateRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
-            <Route path="/admin" element={<UserPage />} />
+            <Route path="/admin" element={<DashboardPage />} />
+            <Route path="/admin/users" element={<UserPage />} />
+            <Route path="/admin/account" element={<AccountPage />} />
           </Route>
         </Route>
 

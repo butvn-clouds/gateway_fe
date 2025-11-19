@@ -782,3 +782,9 @@ span.flatpickr-weekday,
 .simplebar-scrollbar.simplebar-visible:before {
   @apply opacity-100;
 }
+.bg-custom {
+  background: rgb(245, 247, 254);
+}
+.bg-custom-transparent {
+  background: transparent;
+}

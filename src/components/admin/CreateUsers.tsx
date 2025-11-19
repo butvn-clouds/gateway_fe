@@ -19,7 +19,11 @@ import {
   ApiUpdateUserParam,
   Auth,
   ApiUserPage,
-} from "../../types/Auth";
+  Account,
+  VirtualAccount,
+} from "../../types/Types";
+
+import { AccountGetAll } from "../../api/api.account";
 
 export default function CreateUserAdmin() {
   const { user: currentUser } = useAuth();
@@ -34,6 +38,8 @@ export default function CreateUserAdmin() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalElements, setTotalElements] = useState(0);
   const isAdmin = currentUser?.role === "ROLE_ADMIN";
+
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   const loadUsers = async (pageNumber = 0) => {
     try {
@@ -51,17 +57,49 @@ export default function CreateUserAdmin() {
     }
   };
 
+  const loadAccounts = async () => {
+    try {
+      const res = await AccountGetAll();
+      setAccounts(res?.content || []);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load accounts!");
+    }
+  };
+
   useEffect(() => {
     if (!isAdmin) return;
     loadUsers(0);
+    loadAccounts();
   }, [isAdmin]);
 
+  const allVirtualAccounts: { id: number; label: string }[] = accounts.flatMap(
+    (acc) =>
+      (acc.virtualAccounts || []).map((va: VirtualAccount) => ({
+        id: va.id,
+        label: `${acc.name} - ${va.name || va.slashId}`,
+      }))
+  );
+
+  const toNumberArray = (value: any): number[] => {
+    if (!value) return [];
+    if (!Array.isArray(value)) return [Number(value)];
+    return value
+      .map((v) => Number(v))
+      .filter((v) => !Number.isNaN(v));
+  };
+
   const handleAdd = async (data: any) => {
+    const accountIds = toNumberArray(data.accountIds);
+    const virtualAccountIds = toNumberArray(data.virtualAccountIds);
+
     const payload: ApiCreateUserParam = {
       username: (data.username || "").trim(),
       password: data.password || "",
       name: data.name?.trim() || undefined,
       role: data.role as ApiCreateUserParam["role"],
+      accountIds,
+      virtualAccountIds,
     };
 
     if (!payload.username) {
@@ -86,7 +124,7 @@ export default function CreateUserAdmin() {
       toast.success("User created successfully!");
       setAddModalOpen(false);
       setEditingUser(null);
-      await loadUsers(0); 
+      await loadUsers(0);
     } catch (e) {
       console.error(e);
       toast.error("Create user failed!");
@@ -96,9 +134,14 @@ export default function CreateUserAdmin() {
   const handleUpdate = async (data: any) => {
     if (!editingUser) return;
 
+    const accountIds = toNumberArray(data.accountIds);
+    const virtualAccountIds = toNumberArray(data.virtualAccountIds);
+
     const payload: ApiUpdateUserParam = {
       name: data.name?.trim() || undefined,
       role: data.role as ApiUpdateUserParam["role"],
+      accountIds,
+      virtualAccountIds,
     };
 
     if (!payload.role) {
@@ -172,6 +215,12 @@ export default function CreateUserAdmin() {
     const newPage = page + 1;
     loadUsers(newPage);
   };
+
+  const editingAccountIds =
+    editingUser?.accounts?.map((acc) => acc.id) ?? [];
+
+  const editingVirtualAccountIds =
+    editingUser?.virtualAccounts?.map((va) => va.id) ?? [];
 
   return (
     <div className="bg-white rounded-2xl shadow p-6">
@@ -276,7 +325,7 @@ export default function CreateUserAdmin() {
               </tbody>
             </table>
 
-            <div className="flex items-center justify-between px-4 py-3 border-t bg-white">
+            <div className="flex items-center justify-between px-4 py-3 border-t bg_white">
               <p className="text-xs text-gray-500">
                 Page {page + 1} of {Math.max(totalPages, 1)} •{" "}
                 {totalElements} users
@@ -336,6 +385,26 @@ export default function CreateUserAdmin() {
                     { label: "ADMIN", value: "ROLE_ADMIN" },
                   ],
                 },
+                {
+                  name: "accountIds",
+                  label: "Slash Accounts",
+                  type: "multiselect",
+                  defaultValue: editingAccountIds,
+                  options: accounts.map((acc) => ({
+                    label: acc.name,
+                    value: acc.id,
+                  })),
+                },
+                {
+                  name: "virtualAccountIds",
+                  label: "Virtual Accounts",
+                  type: "multiselect",
+                  defaultValue: editingVirtualAccountIds,
+                  options: allVirtualAccounts.map((va) => ({
+                    label: va.label,
+                    value: va.id,
+                  })),
+                },
               ]
             : [
                 {
@@ -357,6 +426,26 @@ export default function CreateUserAdmin() {
                     { label: "USER", value: "ROLE_USER" },
                     { label: "ADMIN", value: "ROLE_ADMIN" },
                   ],
+                },
+                {
+                  name: "accountIds",
+                  label: "Slash Accounts",
+                  type: "multiselect",
+                  defaultValue: [],
+                  options: accounts.map((acc) => ({
+                    label: acc.name,
+                    value: acc.id,
+                  })),
+                },
+                {
+                  name: "virtualAccountIds",
+                  label: "Virtual Accounts",
+                  type: "multiselect",
+                  defaultValue: [],
+                  options: allVirtualAccounts.map((va) => ({
+                    label: va.label,
+                    value: va.id,
+                  })),
                 },
               ]
         }

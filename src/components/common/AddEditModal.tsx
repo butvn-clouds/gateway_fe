@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
 
+interface FieldOption {
+  label: string;
+  value: string | number;
+}
+
 interface Field {
   name: string;
   label: string;
   type: "text" | "select" | "file" | "multiselect" | "password";
   placeholder?: string;
-  options?: { label: string; value: string }[];
+  options?: FieldOption[];
   defaultValue?: any;
 }
 
@@ -31,11 +36,21 @@ export default function AddEditModal({
     if (show) {
       const initial: any = {};
       fields.forEach((f) => {
-        if (f.type === "multiselect") initial[f.name] = f.defaultValue || [];
-        else initial[f.name] = f.defaultValue ?? (f.type === "file" ? null : "");
-        if (f.type === "file" && f.defaultValue) setFilePreview(f.defaultValue);
+        if (f.type === "multiselect") {
+          initial[f.name] = f.defaultValue || [];
+        } else if (f.type === "file") {
+          initial[f.name] = null;
+          if (f.defaultValue) {
+            setFilePreview(f.defaultValue);
+          }
+        } else {
+          initial[f.name] = f.defaultValue ?? "";
+        }
       });
       setFormData(initial);
+    } else {
+      // reset preview khi đóng modal
+      setFilePreview(null);
     }
   }, [fields, show]);
 
@@ -58,7 +73,7 @@ export default function AddEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl w-[500px] p-6 relative">
+      <div className="bg-custom rounded-xl w-[500px] p-6 relative">
         <h3 className="text-lg font-semibold mb-4 text-center">{title}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           {fields.map((f) => (
@@ -71,7 +86,7 @@ export default function AddEditModal({
                 <input
                   type="text"
                   placeholder={f.placeholder}
-                  value={formData[f.name] || ""}
+                  value={formData[f.name] ?? ""}
                   onChange={(e) => handleChange(f.name, e.target.value)}
                   className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
@@ -81,7 +96,7 @@ export default function AddEditModal({
                 <input
                   type="password"
                   placeholder={f.placeholder}
-                  value={formData[f.name] || ""}
+                  value={formData[f.name] ?? ""}
                   onChange={(e) => handleChange(f.name, e.target.value)}
                   className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
@@ -89,15 +104,25 @@ export default function AddEditModal({
 
               {f.type === "select" && (
                 <select
-                  value={formData[f.name] ?? ""}
-                  onChange={(e) => handleChange(f.name, e.target.value)}
+                  value={
+                    formData[f.name] !== undefined && formData[f.name] !== null
+                      ? String(formData[f.name])
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    const opt = f.options?.find(
+                      (o) => String(o.value) === selected
+                    );
+                    handleChange(f.name, opt ? opt.value : selected);
+                  }}
                   className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">
                     {f.placeholder ? f.placeholder : `Chọn ${f.label}`}
                   </option>
                   {f.options?.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
+                    <option key={String(opt.value)} value={String(opt.value)}>
                       {opt.label}
                     </option>
                   ))}
@@ -107,18 +132,28 @@ export default function AddEditModal({
               {f.type === "multiselect" && (
                 <select
                   multiple
-                  value={formData[f.name] || []}
+                  value={
+                    Array.isArray(formData[f.name])
+                      ? formData[f.name].map((v: any) => String(v))
+                      : []
+                  }
                   onChange={(e) => {
-                    const selected = Array.from(
+                    const selectedValues = Array.from(
                       e.target.selectedOptions,
                       (opt) => opt.value
                     );
-                    handleChange(f.name, selected);
+                    const resolved = selectedValues.map((val) => {
+                      const opt = f.options?.find(
+                        (o) => String(o.value) === val
+                      );
+                      return opt ? opt.value : val;
+                    });
+                    handleChange(f.name, resolved);
                   }}
                   className="w-full border px-3 py-2 rounded-lg h-32 focus:ring-2 focus:ring-blue-500"
                 >
                   {f.options?.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
+                    <option key={String(opt.value)} value={String(opt.value)}>
                       {opt.label}
                     </option>
                   ))}
