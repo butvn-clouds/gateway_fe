@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import { IoAddOutline } from "react-icons/io5";
 import { MdDeleteOutline } from "react-icons/md";
@@ -24,6 +24,7 @@ import {
 } from "../../types/Types";
 
 import { AccountGetAll } from "../../api/api.account";
+import { Link } from "react-router-dom";
 
 export default function CreateUserAdmin() {
   const { user: currentUser } = useAuth();
@@ -41,6 +42,7 @@ export default function CreateUserAdmin() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
 
+  // ================== LOAD DATA ==================
   const loadUsers = async (pageNumber = 0) => {
     try {
       setLoading(true);
@@ -73,21 +75,33 @@ export default function CreateUserAdmin() {
     loadAccounts();
   }, [isAdmin]);
 
-  const allVirtualAccounts: { id: number; label: string }[] = accounts.flatMap(
-    (acc) =>
-      (acc.virtualAccounts || []).map((va: VirtualAccount) => ({
+  // ================== VIRTUAL ACCOUNT OPTIONS ==================
+  // Map: accountId -> list VA options
+  const virtualAccountsByAccountId = useMemo(() => {
+    const map: Record<number, { id: number; label: string }[]> = {};
+    accounts.forEach((acc) => {
+      const list = (acc.virtualAccounts || []) as VirtualAccount[];
+      if (!list.length) return;
+      map[acc.id] = list.map((va) => ({
         id: va.id,
         label: `${acc.name} - ${va.name || va.slashId}`,
-      }))
-  );
+      }));
+    });
+    return map;
+  }, [accounts]);
 
   const toNumberArray = (value: any): number[] => {
     if (!value) return [];
-    if (!Array.isArray(value)) return [Number(value)];
-    return value
-      .map((v) => Number(v))
-      .filter((v) => !Number.isNaN(v));
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => Number(v))
+        .filter((v) => !Number.isNaN(v));
+    }
+    const n = Number(value);
+    return Number.isNaN(n) ? [] : [n];
   };
+
+  // ================== ADD / UPDATE / DELETE ==================
 
   const handleAdd = async (data: any) => {
     const accountIds = toNumberArray(data.accountIds);
@@ -227,10 +241,40 @@ export default function CreateUserAdmin() {
       <ToastContainer style={{ zIndex: 1000000 }} />
 
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800">
-            User Management
-          </h3>
+         <div>
+            <ol className="flex items-center gap-1.5">
+        <li>
+          <Link
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400"
+            to="/admin"
+          >
+            Home
+            <svg
+              className="stroke-current"
+              width="17"
+              height="16"
+              viewBox="0 0 17 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M6.0765 12.667L10.2432 8.50033L6.0765 4.33366"
+                stroke=""
+                stroke-width="1.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </Link>
+        </li>
+        <li
+          className="text-sm font-semibold text-gray-800"
+          x-text="pageName"
+        >
+          {" "}
+          User Management
+        </li>
+      </ol>
         </div>
 
         <button
@@ -303,7 +347,7 @@ export default function CreateUserAdmin() {
                           Edit
                         </button>
 
-                        <button
+                          <button
                           disabled={currentUser?.id === u.id}
                           onClick={() => {
                             setDeleteId(u.id);
@@ -400,10 +444,21 @@ export default function CreateUserAdmin() {
                   label: "Virtual Accounts",
                   type: "multiselect",
                   defaultValue: editingVirtualAccountIds,
-                  options: allVirtualAccounts.map((va) => ({
-                    label: va.label,
-                    value: va.id,
-                  })),
+                  dependsOn: "accountIds",
+                  // optionsFn: filter theo accountIds
+                  optionsFn: (formValues: any) => {
+                    const selectedAccountIds = toNumberArray(
+                      formValues.accountIds
+                    );
+                    const opts: { label: string; value: number }[] = [];
+                    selectedAccountIds.forEach((aid) => {
+                      const list = virtualAccountsByAccountId[aid] || [];
+                      list.forEach((x) =>
+                        opts.push({ label: x.label, value: x.id })
+                      );
+                    });
+                    return opts;
+                  },
                 },
               ]
             : [
@@ -442,10 +497,20 @@ export default function CreateUserAdmin() {
                   label: "Virtual Accounts",
                   type: "multiselect",
                   defaultValue: [],
-                  options: allVirtualAccounts.map((va) => ({
-                    label: va.label,
-                    value: va.id,
-                  })),
+                  dependsOn: "accountIds",
+                  optionsFn: (formValues: any) => {
+                    const selectedAccountIds = toNumberArray(
+                      formValues.accountIds
+                    );
+                    const opts: { label: string; value: number }[] = [];
+                    selectedAccountIds.forEach((aid) => {
+                      const list = virtualAccountsByAccountId[aid] || [];
+                      list.forEach((x) =>
+                        opts.push({ label: x.label, value: x.id })
+                      );
+                    });
+                    return opts;
+                  },
                 },
               ]
         }

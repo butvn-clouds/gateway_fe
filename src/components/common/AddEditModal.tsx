@@ -1,204 +1,218 @@
-import { useState, useEffect } from "react";
+// src/components/common/AddEditModal.tsx
+import React, { useEffect, useState } from "react";
 
-interface FieldOption {
+type FieldType = "text" | "password" | "select" | "multiselect";
+
+interface Option {
   label: string;
   value: string | number;
 }
 
-interface Field {
+export interface FieldConfig {
   name: string;
   label: string;
-  type: "text" | "select" | "file" | "multiselect" | "password";
+  type: FieldType;
   placeholder?: string;
-  options?: FieldOption[];
   defaultValue?: any;
+  options?: Option[];
+  // tên field mà nó phụ thuộc (VD virtualAccountIds phụ thuộc accountIds)
+  dependsOn?: string;
+  // build options động từ formData hiện tại
+  optionsFn?: (formValues: Record<string, any>) => Option[];
 }
 
 interface AddEditModalProps {
   show: boolean;
   title: string;
-  fields: Field[];
-  onSubmit: (data: any) => void | Promise<void>;
+  fields: FieldConfig[];
+  onSubmit: (data: Record<string, any>) => void | Promise<void>;
   onCancel: () => void;
 }
 
-export default function AddEditModal({
+const AddEditModal: React.FC<AddEditModalProps> = ({
   show,
   title,
   fields,
   onSubmit,
   onCancel,
-}: AddEditModalProps) {
-  const [formData, setFormData] = useState<any>({});
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+}) => {
+  const [formValues, setFormValues] = useState<Record<string, any>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (show) {
-      const initial: any = {};
+      const initialValues: Record<string, any> = {};
       fields.forEach((f) => {
-        if (f.type === "multiselect") {
-          initial[f.name] = f.defaultValue || [];
-        } else if (f.type === "file") {
-          initial[f.name] = null;
-          if (f.defaultValue) {
-            setFilePreview(f.defaultValue);
-          }
+        if (typeof f.defaultValue !== "undefined") {
+          initialValues[f.name] = f.defaultValue;
         } else {
-          initial[f.name] = f.defaultValue ?? "";
+          if (f.type === "multiselect") initialValues[f.name] = [];
+          else initialValues[f.name] = "";
         }
       });
-      setFormData(initial);
-    } else {
-      // reset preview khi đóng modal
-      setFilePreview(null);
+      setFormValues(initialValues);
+      setSubmitting(false);
     }
-  }, [fields, show]);
-
-  const handleChange = (name: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [name]: value }));
-
-    if (name === "logo" && value instanceof File) {
-      const reader = new FileReader();
-      reader.onload = (e) => setFilePreview(e.target?.result as string);
-      reader.readAsDataURL(value);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
-  };
+  }, [show, fields]);
 
   if (!show) return null;
 
+  const handleChange = (
+    name: string,
+    value: any,
+    fieldType: FieldType
+  ) => {
+    setFormValues((prev) => {
+      const next = { ...prev, [name]: value };
+
+      // nếu đổi accountIds -> clear virtualAccountIds để tránh lệch
+      if (name === "accountIds") {
+        next["virtualAccountIds"] = [];
+      }
+
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(formValues);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const renderField = (field: FieldConfig) => {
+    const value = formValues[field.name];
+
+    // options: ưu tiên optionsFn (dynamic), sau đó tới options static
+    const options: Option[] = field.optionsFn
+      ? field.optionsFn(formValues) || []
+      : field.options || [];
+
+    const disabledByDepends =
+      !!field.dependsOn &&
+      (!formValues[field.dependsOn] ||
+        (Array.isArray(formValues[field.dependsOn]) &&
+          formValues[field.dependsOn].length === 0));
+
+    switch (field.type) {
+      case "text":
+      case "password":
+        return (
+          <div key={field.name} className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">
+              {field.label}
+            </label>
+            <input
+              type={field.type}
+              className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder={field.placeholder}
+              value={value ?? ""}
+              onChange={(e) =>
+                handleChange(field.name, e.target.value, field.type)
+              }
+            />
+          </div>
+        );
+
+      case "select":
+        return (
+          <div key={field.name} className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">
+              {field.label}
+            </label>
+            <select
+              className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={value ?? ""}
+              onChange={(e) =>
+                handleChange(field.name, e.target.value, field.type)
+              }
+            >
+              {field.placeholder && (
+                <option value="">{field.placeholder}</option>
+              )}
+              {options.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+
+      case "multiselect":
+        return (
+          <div key={field.name} className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">
+              {field.label}
+            </label>
+            <select
+              multiple
+              disabled={disabledByDepends}
+              className="w-full rounded-md border px-3 py-2 text-sm h-32 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+              value={Array.isArray(value) ? value.map(String) : []}
+              onChange={(e) => {
+                const selected = Array.from(
+                  e.target.selectedOptions
+                ).map((opt) => opt.value);
+                handleChange(field.name, selected, field.type);
+              }}
+            >
+              {options.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {disabledByDepends && (
+              <p className="text-xs text-gray-400 mt-1">
+                Vui lòng chọn account trước.
+              </p>
+            )}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-custom rounded-xl w-[500px] p-6 relative">
-        <h3 className="text-lg font-semibold mb-4 text-center">{title}</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {fields.map((f) => (
-            <div key={f.name}>
-              <label className="block mb-1 font-medium text-gray-700">
-                {f.label}
-              </label>
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg">
+        <div className="px-5 py-4 border-b">
+          <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+        </div>
 
-              {f.type === "text" && (
-                <input
-                  type="text"
-                  placeholder={f.placeholder}
-                  value={formData[f.name] ?? ""}
-                  onChange={(e) => handleChange(f.name, e.target.value)}
-                  className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              )}
+        <form onSubmit={handleSubmit}>
+          <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            {fields.map((f) => renderField(f))}
+          </div>
 
-              {f.type === "password" && (
-                <input
-                  type="password"
-                  placeholder={f.placeholder}
-                  value={formData[f.name] ?? ""}
-                  onChange={(e) => handleChange(f.name, e.target.value)}
-                  className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              )}
-
-              {f.type === "select" && (
-                <select
-                  value={
-                    formData[f.name] !== undefined && formData[f.name] !== null
-                      ? String(formData[f.name])
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const selected = e.target.value;
-                    const opt = f.options?.find(
-                      (o) => String(o.value) === selected
-                    );
-                    handleChange(f.name, opt ? opt.value : selected);
-                  }}
-                  className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">
-                    {f.placeholder ? f.placeholder : `Chọn ${f.label}`}
-                  </option>
-                  {f.options?.map((opt) => (
-                    <option key={String(opt.value)} value={String(opt.value)}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {f.type === "multiselect" && (
-                <select
-                  multiple
-                  value={
-                    Array.isArray(formData[f.name])
-                      ? formData[f.name].map((v: any) => String(v))
-                      : []
-                  }
-                  onChange={(e) => {
-                    const selectedValues = Array.from(
-                      e.target.selectedOptions,
-                      (opt) => opt.value
-                    );
-                    const resolved = selectedValues.map((val) => {
-                      const opt = f.options?.find(
-                        (o) => String(o.value) === val
-                      );
-                      return opt ? opt.value : val;
-                    });
-                    handleChange(f.name, resolved);
-                  }}
-                  className="w-full border px-3 py-2 rounded-lg h-32 focus:ring-2 focus:ring-blue-500"
-                >
-                  {f.options?.map((opt) => (
-                    <option key={String(opt.value)} value={String(opt.value)}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {f.type === "file" && (
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) =>
-                      handleChange(f.name, e.target.files?.[0] || null)
-                    }
-                    className="block w-full text-sm text-gray-700 border border-gray-300 rounded-lg cursor-pointer focus:outline-none"
-                  />
-                  {filePreview && (
-                    <img
-                      src={filePreview}
-                      alt="Preview"
-                      className="w-24 h-24 rounded object-cover border"
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-
-          <div className="flex justify-end gap-3 mt-4">
+          <div className="px-5 py-3 border-t flex justify-end gap-2 bg-gray-50">
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 rounded-lg border hover:bg-gray-100"
+              className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              disabled={submitting}
+              className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
             >
-              Save
+              {submitting ? "Saving..." : "Save"}
             </button>
           </div>
         </form>
       </div>
     </div>
   );
-}
+};
+
+export default AddEditModal;

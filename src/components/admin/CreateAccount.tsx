@@ -16,6 +16,7 @@ import { Account, VirtualAccount, AccountPage } from "../../types/Types";
 
 import AddEditModal from "../common/AddEditModal";
 import ConfirmModal from "../common/ConfirmModal";
+import { Link } from "react-router";
 
 type ActiveMap = Record<number, boolean>;
 
@@ -279,16 +280,46 @@ export default function AccountManagement() {
     );
   };
 
-  // ================== RENDER ==================
   return (
+    <>
     <div className="bg-white rounded-2xl shadow p-6">
       <ToastContainer style={{ zIndex: 1000000 }} />
-
+    
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">
-            Slash Accounts
-          </h3>
+            <ol className="flex items-center gap-1.5">
+        <li>
+          <Link
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400"
+            to="/admin"
+          >
+            Home
+            <svg
+              className="stroke-current"
+              width="17"
+              height="16"
+              viewBox="0 0 17 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M6.0765 12.667L10.2432 8.50033L6.0765 4.33366"
+                stroke=""
+                stroke-width="1.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </Link>
+        </li>
+        <li
+          className="text-sm font-semibold text-gray-800"
+          x-text="pageName"
+        >
+          {" "}
+          Slash Accounts
+        </li>
+      </ol>
         </div>
 
         <button
@@ -689,5 +720,6 @@ export default function AccountManagement() {
         </div>
       )}
     </div>
+    </>
   );
 }

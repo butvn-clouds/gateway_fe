@@ -1,41 +1,59 @@
-
 export interface VirtualAccount {
   id: number;
   slashId: string;
+  accountId: number | null;
+  accountName?: string | null;
+
   name?: string | null;
-  // thêm field khác nếu backend có:
-  // status?: string;
-  // createdAt?: string;
+  routingNumber?: string | null;
+  accountNumber?: string | null;
+  slashAccountId?: string | null;
+  accountType?: string | null;
+  closedAt?: string | null;
+
+  balanceCents?: number | null;
+  spendCents?: number | null;
+
+  commissionType?: string | null;
+  commissionAmountCents?: number | null;
+  commissionFrequency?: string | null;
+  commissionStartDateIso?: string | null;
 }
 
 export interface Account {
   id: number;
   name: string;
-  apiKey: string;
-  virtualAccounts: VirtualAccount[];
+  apiKey?: string;
+  slashAccountId?: string;
+  virtualAccounts?: VirtualAccount[];
+  label?: string;
 }
 
 export type AuthRole = "ROLE_USER" | "ROLE_ADMIN";
 
+export interface SlashAccountLabel {
+  id: number;
+  accountId: number;
+  virtualAccountId: number | null;
+  label: string;
+}
+
 export interface Auth {
+  activeAccount: any;
   id: number;
   username: string;
   name?: string;
   role: AuthRole;
   accountIds: number[];
-  virtualAccountIds: number[]; 
+  virtualAccountIds: number[];
   accounts: Account[];
   virtualAccounts: VirtualAccount[];
   createdAt: string;
   updatedAt: string;
   accountLabel?: string;
   virtualAccountLabel?: string;
-  slashAccounts?: {
-    id(id: any): unknown;
-    accountId: number;
-    virtualAccountId: number | null;
-    label: string;
-  }[];
+
+  slashAccounts?: SlashAccountLabel[];
 }
 
 export interface AuthContextTypes {
@@ -56,6 +74,7 @@ export interface ApiLoginResponse {
   message: string;
   token: string;
 }
+
 export interface ApiCreateUserParam {
   username: string;
   password: string;
@@ -69,7 +88,6 @@ export interface ApiUpdateUserParam {
   username?: string;
   name?: string;
   role?: AuthRole;
-
   accountIds?: number[];
   virtualAccountIds?: number[];
 }
@@ -84,6 +102,14 @@ export interface ApiUserPage {
 
 export interface AccountPage {
   content: Account[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export interface VirtualAccountPage {
+  content: VirtualAccount[];
   page: number;
   size: number;
   totalElements: number;

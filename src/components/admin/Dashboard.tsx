@@ -33,10 +33,10 @@ const Dashboard: React.FC = () => {
 
               <div>
                 <h4 className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
-                  Slash Account
+                  <Link to="/admin/account">Slash Account</Link>
                 </h4>
                 <span className="block text-sm text-gray-500 dark:text-gray-400">
-                  <Link to="/admin/account">Manage Accounts</Link>
+                  Manage Accounts
                 </span>
               </div>
             </div>
@@ -69,17 +69,15 @@ const Dashboard: React.FC = () => {
 
               <div>
                 <h4 className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
-                  Users Management
+                  <Link to="/admin/users"> Users Management</Link>
                 </h4>
                 <span className="block text-sm text-gray-500 dark:text-gray-400">
-                  <Link to="/admin/users">Manage Accounts</Link>
+                 Manage Accounts
                 </span>
               </div>
             </div>
 
-            <div>
-              
-            </div>
+            <div></div>
           </div>
         </div>
       </div>
