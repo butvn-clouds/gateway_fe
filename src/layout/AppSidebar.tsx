@@ -2,10 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import {
-  CalenderIcon,
   ChevronDownIcon,
   HorizontaLDots,
-  UserCircleIcon,
 } from "../icons";
 import { GoHistory } from "react-icons/go";
 import { FaCreditCard, FaLayerGroup  } from "react-icons/fa";

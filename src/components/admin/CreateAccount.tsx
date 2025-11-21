@@ -39,7 +39,7 @@ export default function AccountManagement() {
 
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
 
-  const [activeMap, setActiveMap] = useState<ActiveMap>({});
+  const [, setActiveMap] = useState<ActiveMap>({});
 
   // state cho nút Copy
   const [copied, setCopied] = useState(false);
@@ -151,12 +151,12 @@ export default function AccountManagement() {
   };
 
   // ================== ACTIVE TOGGLE (UI only) ==================
-  const toggleActive = (id: number) => {
-    setActiveMap((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
+    // const toggleActive = (id: number) => {
+    //   setActiveMap((prev) => ({
+    //     ...prev,
+    //     [id]: !prev[id],
+    //   }));
+    // };
 
   const isEditing = !!editingAccount;
 
@@ -217,10 +217,10 @@ export default function AccountManagement() {
     }
   };
 
-  const handleRegenerateKey = () => {
-    // TODO: nối với API regenerate real
-    toast.info("Regenerate API key is not implemented yet.");
-  };
+  // const handleRegenerateKey = () => {
+  //   // TODO: nối với API regenerate real
+  //   toast.info("Regenerate API key is not implemented yet.");
+  // };
 
   const renderPagination = () => {
     if (totalPages <= 1) return null;
@@ -346,8 +346,8 @@ export default function AccountManagement() {
         <>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-2">
             {accounts.map((acc) => {
-              const isActive = activeMap[acc.id] ?? true;
-              const vaCount = acc.virtualAccounts?.length || 0;
+              // const isActive = activeMap[acc.id] ?? true;
+              // const vaCount = acc.virtualAccounts?.length || 0;
 
               return (
                 <article

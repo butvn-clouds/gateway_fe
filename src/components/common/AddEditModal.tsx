@@ -60,7 +60,7 @@ const AddEditModal: React.FC<AddEditModalProps> = ({
   const handleChange = (
     name: string,
     value: any,
-    fieldType: FieldType
+    _fieldType: FieldType
   ) => {
     setFormValues((prev) => {
       const next = { ...prev, [name]: value };

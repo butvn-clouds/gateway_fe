@@ -1,4 +1,3 @@
-import type React from "react";
 import type { FC, InputHTMLAttributes } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
