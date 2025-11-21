@@ -3,17 +3,14 @@ export interface VirtualAccount {
   slashId: string;
   accountId: number | null;
   accountName?: string | null;
-
   name?: string | null;
   routingNumber?: string | null;
   accountNumber?: string | null;
-  slashAccountId?: string | null;
   accountType?: string | null;
+  slashAccountId?: string | null;
   closedAt?: string | null;
-
   balanceCents?: number | null;
   spendCents?: number | null;
-
   commissionType?: string | null;
   commissionAmountCents?: number | null;
   commissionFrequency?: string | null;
@@ -24,7 +21,9 @@ export interface Account {
   id: number;
   name: string;
   apiKey?: string;
-  slashAccountId?: string;
+
+  slashAccountId?: string | null;
+
   virtualAccounts?: VirtualAccount[];
   label?: string;
 }
@@ -44,12 +43,16 @@ export interface Auth {
   username: string;
   name?: string;
   role: AuthRole;
+
   accountIds: number[];
   virtualAccountIds: number[];
+
   accounts: Account[];
   virtualAccounts: VirtualAccount[];
+
   createdAt: string;
   updatedAt: string;
+
   accountLabel?: string;
   virtualAccountLabel?: string;
 
@@ -114,4 +117,38 @@ export interface VirtualAccountPage {
   size: number;
   totalElements: number;
   totalPages: number;
+}
+
+export interface ApiCreateVirtualAccountParam {
+  name: string;
+  commissionType?: string | null;
+  commissionAmountCents?: number | null; 
+  commissionFrequency?: string | null;
+  commissionStartDateIso?: string | null;
+  initialFundingAmountCents?: number | null;
+}
+
+export interface ApiUpdateVirtualAccountParam {
+  name?: string;
+  commissionType?: string | null;
+  commissionAmountCents?: number | null;
+  commissionFrequency?: string | null;
+  commissionStartDateIso?: string | null;
+}
+
+export interface VirtualAccountCreateRequest {
+  name: string;
+  commissionType?: string | null;
+  commissionAmountCents?: number | null;
+  commissionFrequency?: string | null;
+  commissionStartDateIso?: string | null;
+  initialFundingAmountCents?: number | null;
+}
+export interface VirtualAccountUpdateRequest {
+  name?: string;
+
+  commissionType?: string | null;
+  commissionAmountCents?: number | null;
+  commissionFrequency?: string | null;
+  commissionStartDateIso?: string | null;
 }

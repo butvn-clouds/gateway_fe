@@ -20,11 +20,13 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [data, setData] = useState<VirtualAccount[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [fetching, setFetching] = useState(false);
+
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createFlatFee, setCreateFlatFee] = useState<number>(0);
   const [createInitialFunding, setCreateInitialFunding] = useState<number>(0);
   const [creating, setCreating] = useState(false);
+
   const [showEdit, setShowEdit] = useState(false);
   const [editingVa, setEditingVa] = useState<VirtualAccount | null>(null);
   const [editName, setEditName] = useState("");
@@ -41,6 +43,16 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  };
+
+  const percentFromCents = (cents?: number | null) => {
+    if (cents == null) return 0;
+    return cents / 100;
+  };
+
+  const percentToCents = (percent: number) => {
+    if (!Number.isFinite(percent)) return 0;
+    return Math.round(percent * 100);
   };
 
   useEffect(() => {
@@ -88,7 +100,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
       );
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Not load được danh sách VA");
+      toast.error(err?.response?.data?.message || "Unable to load virtual accounts");
     } finally {
       setFetching(false);
     }
@@ -109,11 +121,11 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
       await virtualAccountApi.syncAccount(selectedAccountId);
       setPage(0);
       await loadData(selectedAccountId, 0);
-      toast.success("Sync virtual accounts thành công");
+      toast.success("Sync virtual accounts successful");
     } catch (err: any) {
       console.error(err);
       toast.error(
-        err?.response?.data?.message || "Sync virtual accounts thất bại"
+        err?.response?.data?.message || "Sync virtual accounts failed"
       );
     } finally {
       setSyncing(false);
@@ -121,20 +133,22 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Xoá virtual account này luôn hả?")) return;
+    if (!window.confirm("Delete this virtual account permanently?")) return;
     try {
       await virtualAccountApi.deleteVirtualAccount(id);
-      toast.success("Xoá virtual account thành công");
+      toast.success("Delete virtual account successful");
       if (selectedAccountId != null) {
         await loadData(selectedAccountId, page);
       }
     } catch (err: any) {
       console.error(err);
       toast.error(
-        err?.response?.data?.message || "Không xoá được virtual account"
+        err?.response?.data?.message || "Unable to delete virtual account"
       );
     }
   };
+
+  // ============ CREATE MODAL ============
 
   const openCreateModal = () => {
     setCreateName("");
@@ -144,46 +158,52 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedAccountId) {
-      toast.error("Chưa chọn account");
-      return;
-    }
-    if (!createName.trim()) {
-      toast.error("Name không được để trống");
-      return;
-    }
+  e.preventDefault();
+  if (!selectedAccountId) {
+    toast.error("No account selected");
+    return;
+  }
+  if (!createName.trim()) {
+    toast.error("Name cannot be empty");
+    return;
+  }
 
-    try {
-      setCreating(true);
+  try {
+    setCreating(true);
+    const commissionAmountCents = percentToCents(Number(createFlatFee) || 0);
+    const initialFundingAmountCents =
+      Math.round((Number(createInitialFunding) || 0) * 100) || 0;
+    await virtualAccountApi.createVirtualAccount(selectedAccountId, {
+      name: createName.trim(),
+      commissionType: "flatFee",       
+      commissionAmountCents,
+      commissionFrequency: "monthly",
+      commissionStartDateIso: null,      
+      initialFundingAmountCents,
+    });
 
-      await virtualAccountApi.createVirtualAccount({
-        accountId: selectedAccountId,
-        name: createName.trim(),
-        flatFeePercent: Number(createFlatFee) || 0,
-        initialFundingUsd: Number(createInitialFunding) || 0,
-      });
+    toast.success("Create virtual account successful");
+    setShowCreate(false);
+    setPage(0);
+    await loadData(selectedAccountId, 0);
+  } catch (err: any) {
+    console.error(err);
+    toast.error(
+      err?.response?.data?.message || "Unable to create virtual account"
+    );
+  } finally {
+    setCreating(false);
+  }
+};
 
-      toast.success("Tạo virtual account thành công");
-      setShowCreate(false);
-      setPage(0);
-      await loadData(selectedAccountId, 0);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(
-        err?.response?.data?.message || "Không tạo được virtual account"
-      );
-    } finally {
-      setCreating(false);
-    }
-  };
+
 
   const openEditModal = (va: VirtualAccount) => {
     setEditingVa(va);
     setEditName(va.name ?? "");
 
-    const raw = (va as any).commissionAmountCents as number | undefined;
-    setEditTakeRate(raw ? raw / 100 : 0);
+    const raw = va.commissionAmountCents;
+    setEditTakeRate(percentFromCents(raw));
 
     setShowEdit(true);
   };
@@ -192,18 +212,22 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     e.preventDefault();
     if (!editingVa) return;
     if (!editName.trim()) {
-      toast.error("Name không được để trống");
+      toast.error("Name cannot be empty");
       return;
     }
 
     try {
-      await virtualAccountApi.updateVirtualAccount({
-        id: editingVa.id,
+      const commissionAmountCents = percentToCents(
+        Number(editTakeRate) || 0
+      );
+
+      await virtualAccountApi.updateVirtualAccount(editingVa.id, {
         name: editName.trim(),
-        takeRatePercent: Number(editTakeRate) || 0,
+        commissionType: editingVa.commissionType ?? "PERCENTAGE",
+        commissionAmountCents,
       });
 
-      toast.success("Cập nhật virtual account thành công");
+      toast.success("Update virtual account successful");
       setShowEdit(false);
       if (selectedAccountId != null) {
         await loadData(selectedAccountId, page);
@@ -211,7 +235,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     } catch (err: any) {
       console.error(err);
       toast.error(
-        err?.response?.data?.message || "Không cập nhật được virtual account"
+        err?.response?.data?.message || "Unable to update virtual account"
       );
     }
   };
@@ -223,16 +247,9 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     <>
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
         <div className="space-y-4">
-          {/* Header / controls giữ nguyên */}
+          {/* Header / controls */}
           <div className="flex flex-wrap items-center gap-3 justify-between mb-2">
-            <div className="text-sm text-gray-600">
-              Account:&nbsp;
-              <span className="font-semibold text-slate-900">
-                {user.activeAccount
-                  ? user.activeAccount.name
-                  : "Chưa chọn account"}
-              </span>
-            </div>
+            <div className="text-sm text-gray-600" />
 
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -253,7 +270,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
             </div>
           </div>
 
-          {/* ================== NEW TABLE UI ================== */}
+          {/* Table */}
           <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
             <div className="max-w-full overflow-x-auto">
               <table className="min-w-full text-xs sm:text-sm">
@@ -262,22 +279,22 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Name
                     </th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Routing
                     </th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Account
                     </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Balance
                     </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Spend (30d)
                     </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Take Rate
                     </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Actions
                     </th>
                   </tr>
@@ -303,87 +320,90 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
                       </td>
                     </tr>
                   ) : (
-                    data.map((va) => (
-                      <tr
-                        key={va.id}
-                        className="bg-white/60 hover:bg-indigo-50/60 transition-colors"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-semibold text-indigo-700">
-                              {va.name?.[0]?.toUpperCase() || "V"}
-                            </div>
-                            <div>
-                              <div className="text-xs sm:text-sm font-medium text-slate-900">
-                                {va.name ?? "-"}
+                    data.map((va) => {
+                      const takeRate = percentFromCents(
+                        va.commissionAmountCents
+                      );
+                      return (
+                        <tr
+                          key={va.id}
+                          className="bg-white/60 hover:bg-indigo-50/60 transition-colors"
+                        >
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center gap-3">
+                              <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-semibold text-indigo-700">
+                                {va.name?.[0]?.toUpperCase() || "V"}
+                              </div>
+                              <div>
+                                <div className="text-xs sm:text-sm font-medium text-slate-900">
+                                  {va.name ?? "-"}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="px-4 py-3 align-middle">
-                          <div className="inline-flex rounded-full bg-slate-900/90 px-2.5 py-1 text-[10px] font-mono text-slate-50">
-                            {va.routingNumber ?? "-"}
-                          </div>
-                        </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex text-slate-900 px-2.5 py-1 text-[12px] font-bold text-slate-50">
+                              {va.routingNumber ?? "-"}
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-3 align-middle">
-                          <div className="inline-flex rounded-full bg-slate-900/90 px-2.5 py-1 text-[10px] font-mono text-slate-50">
-                            {va.accountNumber ?? "-"}
-                          </div>
-                        </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex text-slate-900 px-2.5 py-1 text-[12px] font-bold text-slate-50">
+                              {va.accountNumber ?? "-"}
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-3 text-right align-middle">
-                          <div className="text-xs sm:text-sm font-semibold text-slate-900">
-                            {formatUsd(va.balanceCents)}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Current balance
-                          </div>
-                        </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="text-xs sm:text-sm font-semibold text-slate-900">
+                              {formatUsd(va.balanceCents)}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Current balance
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-3 text-right align-middle">
-                          <div className="text-xs sm:text-sm font-medium text-slate-800">
-                            {formatUsd(va.spendCents)}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Last 30 days
-                          </div>
-                        </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="text-xs sm:text-sm font-medium text-slate-800">
+                              {formatUsd(va.spendCents)}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Last 30 days
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-3 text-right align-middle">
-                          <div className="inline-flex items-center justify-end gap-1">
-                            <span className="text-xs sm:text-sm font-semibold text-emerald-600">
-                              {(va as any).takeRatePercent != null
-                                ? `${(va as any).takeRatePercent} %`
-                                : "0.00 %"}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Commission
-                          </div>
-                        </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <span className="text-xs sm:text-sm font-semibold text-emerald-600">
+                                {takeRate.toFixed(2)} %
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Commission
+                            </div>
+                          </td>
 
-                         <td className="px-4 py-3 text-right align-middle">
-                          <div className="inline-flex items-center gap-1 sm:gap-2">
-                            <button
-                              className="inline-flex items-center gap-1 rounded-full bg-sky-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-sky-600 transition"
-                              onClick={() => openEditModal(va)}
-                            >
-                              <span className="hidden sm:inline">Edit</span>
-                              <span className="sm:hidden">✏️</span>
-                            </button>
-                            <button
-                              className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-red-600 transition"
-                              onClick={() => handleDelete(va.id)}
-                            >
-                              <span className="hidden sm:inline">Xoá</span>
-                              <span className="sm:hidden">🗑</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex items-center gap-1 sm:gap-2">
+                              <button
+                                className="inline-flex items-center gap-1 rounded-full bg-sky-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-sky-600 transition"
+                                onClick={() => openEditModal(va)}
+                              >
+                                <span className="hidden sm:inline">Edit</span>
+                                <span className="sm:hidden">✏️</span>
+                              </button>
+                              <button
+                                className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-red-600 transition"
+                                onClick={() => handleDelete(va.id)}
+                              >
+                                <span className="hidden sm:inline">Xoá</span>
+                                <span className="sm:hidden">🗑</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -425,6 +445,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
         </div>
       </div>
 
+      {/* CREATE MODAL */}
       {showCreate && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden">
@@ -501,6 +522,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
         </div>
       )}
 
+      {/* EDIT MODAL */}
       {showEdit && editingVa && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden">

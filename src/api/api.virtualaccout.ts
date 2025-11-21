@@ -1,6 +1,11 @@
-// src/api/virtualAccountApi.ts
+// src/api/api.virtualaccout.ts
 import api from "../config/api.config";
-import { VirtualAccount, VirtualAccountPage } from "../types/Types";
+import {
+  VirtualAccount,
+  VirtualAccountPage,
+  ApiCreateVirtualAccountParam,
+  ApiUpdateVirtualAccountParam,
+} from "../types/Types";
 
 export const virtualAccountApi = {
   async getMyVirtualAccounts(): Promise<VirtualAccount[]> {
@@ -34,6 +39,28 @@ export const virtualAccountApi = {
   async syncAccount(accountId: number): Promise<VirtualAccount[]> {
     const res = await api.post<VirtualAccount[]>(
       `/api/virtual-accounts/sync/${accountId}`
+    );
+    return res.data;
+  },
+
+  async createVirtualAccount(
+    accountId: number,
+    body: ApiCreateVirtualAccountParam
+  ): Promise<VirtualAccount> {
+    const res = await api.post<VirtualAccount>(
+      `/api/virtual-accounts/account/${accountId}`,
+      body
+    );
+    return res.data;
+  },
+
+  async updateVirtualAccount(
+    id: number,
+    body: ApiUpdateVirtualAccountParam
+  ): Promise<VirtualAccount> {
+    const res = await api.put<VirtualAccount>(
+      `/api/virtual-accounts/${id}`,
+      body
     );
     return res.data;
   },
