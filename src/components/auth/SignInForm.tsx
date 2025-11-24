@@ -19,18 +19,18 @@ export default function SignInForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username) return toast.error("Tên đăng nhập không được để trống");
-    if (!password) return toast.error("Mật khẩu không được để trống");
+    if (!username) return toast.error("Username cannot be blank");
+    if (!password) return toast.error("Password cannot be blank");
 
     setLoading(true);
     try {
       await login(username, password);
-      toast.success("Đăng nhập thành công");
+      toast.success("Login successful");
       setTimeout(() => {
         navigate("/");
       }, 1000);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Đăng nhập thất bại");
+      toast.error(err?.response?.data?.message || "Login failed");
     } finally {
       setLoading(false);
     }

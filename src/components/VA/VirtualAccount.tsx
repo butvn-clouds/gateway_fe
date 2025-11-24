@@ -82,7 +82,8 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
       const res = await virtualAccountApi.getByAccountPaged(
         accountId,
         pageIndex,
-        pageSize
+        pageSize,
+        undefined
       );
 
       setData(res.content);

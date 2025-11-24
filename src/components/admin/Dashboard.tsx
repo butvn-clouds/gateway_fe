@@ -72,7 +72,42 @@ const Dashboard: React.FC = () => {
                   <Link to="/admin/users"> Users Management</Link>
                 </h4>
                 <span className="block text-sm text-gray-500 dark:text-gray-400">
-                 Manage Accounts
+                  Manage Accounts
+                </span>
+              </div>
+            </div>
+
+            <div></div>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white py-4 pl-4 pr-4 dark:border-gray-800 dark:bg-white/[0.03] xl:pr-5">
+            <div className="flex items-center gap-4">
+              <div className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-warning-500/[0.08] text-warning-500">
+                <svg
+                  className="fill-current"
+                  width="25"
+                  height="24"
+                  viewBox="0 0 25 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M12.5 4C10.8431 4 9.5 5.34315 9.5 7C9.5 8.65685 10.8431 10 12.5 10C14.1569 10 15.5 8.65685 15.5 7C15.5 5.34315 14.1569 4 12.5 4ZM8 7C8 4.79086 9.79086 3 12.5 3C15.2091 3 17 4.79086 17 7C17 9.20914 15.2091 11 12.5 11C9.79086 11 8 9.20914 8 7Z"
+                  />
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M7.11829 14.4301C8.32521 13.509 10.0447 13 12.5 13C14.9553 13 16.6748 13.509 17.8817 14.4301C19.0789 15.3435 19.75 16.6149 19.75 18V19C19.75 19.4142 19.4142 19.75 19 19.75C18.5858 19.75 18.25 19.4142 18.25 19V18C18.25 17.2399 17.8711 16.5708 16.9688 15.8952C16.0762 15.2265 14.6207 14.75 12.5 14.75C10.3793 14.75 8.92379 15.2265 8.0312 15.8952C7.12894 16.5708 6.75 17.2399 6.75 18V19C6.75 19.4142 6.41421 19.75 6 19.75C5.58579 19.75 5.25 19.4142 5.25 19V18C5.25 16.6149 5.92106 15.3435 7.11829 14.4301Z"
+                  />
+                </svg>
+              </div>
+
+              <div>
+                <h4 className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
+                  <Link to="/admin/virtual-accounts">Set to hide virtual accounts</Link>
+                </h4>
+                <span className="block text-sm text-gray-500 dark:text-gray-400">
+                  Manage Accounts
                 </span>
               </div>
             </div>
