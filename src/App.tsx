@@ -9,7 +9,7 @@ import UserPage from "./pages/Admin/UserPage";
 import DashboardPage from "./pages/Admin/DashboardPage";
 import AccountPage from "./pages/Admin/AccountPage";
 import VAPage from "./pages/VA/VAPage";
-import { CardGroupManager } from "./components/Card/CardGroup";
+import CardGroupPage from "./pages/Cards/CardGroupPage";
 
 export default function App() {
   return (
@@ -27,7 +27,7 @@ export default function App() {
             <Route path="/admin/users" element={<UserPage />} />
             <Route path="/admin/account" element={<AccountPage />} />
             <Route path="/virtual-account" element={<VAPage />} />
-            <Route path="/card-group" element={<CardGroupManager />} />
+            <Route path="/card-group" element={<CardGroupPage />} />
           </Route>
         </Route>
 

@@ -14,10 +14,7 @@ export const virtualAccountApi = {
   },
 
   async getByAccountPaged(
-    accountId: number,
-    page: number = 0,
-    size: number = 10
-  ): Promise<VirtualAccountPage> {
+accountId: number, page: number = 0, size: number = 10, undefined: undefined  ): Promise<VirtualAccountPage> {
     const safePage =
       typeof page === "number" && Number.isFinite(page) && page >= 0 ? page : 0;
 
