@@ -10,6 +10,7 @@ import DashboardPage from "./pages/Admin/DashboardPage";
 import AccountPage from "./pages/Admin/AccountPage";
 import VAPage from "./pages/VA/VAPage";
 import CardGroupPage from "./pages/Cards/CardGroupPage";
+import MerchantPage from "./pages/Merchant/MerchantPage";
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/admin/account" element={<AccountPage />} />
             <Route path="/virtual-account" element={<VAPage />} />
             <Route path="/card-group" element={<CardGroupPage />} />
+            <Route path="/merchant" element={<MerchantPage />} />
           </Route>
         </Route>
 
