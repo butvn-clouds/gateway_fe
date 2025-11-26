@@ -55,6 +55,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     return Math.round(percent * 100);
   };
 
+  // ====== AUTO CHỌN ACCOUNT ACTIVE ======
   useEffect(() => {
     if (loading) return;
 
@@ -76,36 +77,47 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   }, [loading, user?.activeAccount?.id, accounts, selectedAccountId]);
 
-  const loadData = async (accountId: number, pageIndex: number) => {
-    setFetching(true);
-    try {
-      const res = await virtualAccountApi.getByAccountPaged(
-        accountId,
-        pageIndex,
-        pageSize,
-        undefined
-      );
+  // ====== LOAD DATA TỪ BE ======
+const loadData = async (accountId: number, pageIndex: number) => {
+  setFetching(true);
+  try {
+    const res = await virtualAccountApi.getByAccountPaged(
+      accountId,
+      pageIndex,
+      pageSize,
+      undefined
+    );
 
-      setData(res.content);
-      setPage(
-        typeof res.page === "number" &&
-          Number.isFinite(res.page) &&
-          res.page >= 0
-          ? res.page
-          : 0
-      );
-      setTotalPages(
-        typeof res.totalPages === "number" && Number.isFinite(res.totalPages)
-          ? res.totalPages
-          : 0
-      );
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.response?.data?.message || "Unable to load virtual accounts");
-    } finally {
-      setFetching(false);
-    }
-  };
+    // 🔥 sort lại cho VA mới (id lớn hơn) nằm trên cùng
+    const sorted = [...(res.content ?? [])].sort((a, b) => {
+      const ida = a.id ?? 0;
+      const idb = b.id ?? 0;
+      return idb - ida; // DESC
+    });
+
+    setData(sorted);
+
+    const currentPage =
+      typeof res.number === "number" && Number.isFinite(res.number)
+        ? res.number
+        : pageIndex;
+
+    setPage(currentPage);
+
+    setTotalPages(
+      typeof res.totalPages === "number" && Number.isFinite(res.totalPages)
+        ? res.totalPages
+        : 1
+    );
+  } catch (err: any) {
+    console.error(err);
+    toast.error(
+      err?.response?.data?.message || "Unable to load virtual accounts"
+    );
+  } finally {
+    setFetching(false);
+  }
+};
 
   useEffect(() => {
     if (selectedAccountId != null) {
@@ -113,14 +125,15 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     } else {
       setData([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId, page]);
 
+  // ====== SYNC TỪ SLASH / BE ======
   const handleSync = async () => {
     if (selectedAccountId == null) return;
     setSyncing(true);
     try {
       await virtualAccountApi.syncAccount(selectedAccountId);
-      setPage(0);
       await loadData(selectedAccountId, 0);
       toast.success("Sync virtual accounts successful");
     } catch (err: any) {
@@ -133,12 +146,19 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   };
 
+  // ====== DELETE ======
   const handleDelete = async (id: number) => {
     if (!window.confirm("Delete this virtual account permanently?")) return;
     try {
       await virtualAccountApi.deleteVirtualAccount(id);
       toast.success("Delete virtual account successful");
-      if (selectedAccountId != null) {
+
+      if (selectedAccountId == null) return;
+
+      if (data.length === 1 && page > 0) {
+        const newPage = page - 1;
+        await loadData(selectedAccountId, newPage);
+      } else {
         await loadData(selectedAccountId, page);
       }
     } catch (err: any) {
@@ -159,53 +179,52 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!selectedAccountId) {
-    toast.error("No account selected");
-    return;
-  }
-  if (!createName.trim()) {
-    toast.error("Name cannot be empty");
-    return;
-  }
+    e.preventDefault();
+    if (!selectedAccountId) {
+      toast.error("No account selected");
+      return;
+    }
+    if (!createName.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
 
-  try {
-    setCreating(true);
-    const commissionAmountCents = percentToCents(Number(createFlatFee) || 0);
-    const initialFundingAmountCents =
-      Math.round((Number(createInitialFunding) || 0) * 100) || 0;
-    await virtualAccountApi.createVirtualAccount(selectedAccountId, {
-      name: createName.trim(),
-      commissionType: "flatFee",       
-      commissionAmountCents,
-      commissionFrequency: "monthly",
-      commissionStartDateIso: null,      
-      initialFundingAmountCents,
-    });
+    try {
+      setCreating(true);
+      const commissionAmountCents = percentToCents(Number(createFlatFee) || 0);
+      const initialFundingAmountCents =
+        Math.round((Number(createInitialFunding) || 0) * 100) || 0;
 
-    toast.success("Create virtual account successful");
-    setShowCreate(false);
-    setPage(0);
-    await loadData(selectedAccountId, 0);
-  } catch (err: any) {
-    console.error(err);
-    toast.error(
-      err?.response?.data?.message || "Unable to create virtual account"
-    );
-  } finally {
-    setCreating(false);
-  }
-};
+      await virtualAccountApi.createVirtualAccount(selectedAccountId, {
+        name: createName.trim(),
+        commissionType: "flatFee",
+        commissionAmountCents,
+        commissionFrequency: "monthly",
+        commissionStartDateIso: null,
+        initialFundingAmountCents,
+      });
 
+      toast.success("Create virtual account successful");
+      setShowCreate(false);
 
+      await loadData(selectedAccountId, 0);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message || "Unable to create virtual account"
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // ============ EDIT MODAL ============
 
   const openEditModal = (va: VirtualAccount) => {
     setEditingVa(va);
     setEditName(va.name ?? "");
-
     const raw = va.commissionAmountCents;
     setEditTakeRate(percentFromCents(raw));
-
     setShowEdit(true);
   };
 
@@ -218,9 +237,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
 
     try {
-      const commissionAmountCents = percentToCents(
-        Number(editTakeRate) || 0
-      );
+      const commissionAmountCents = percentToCents(Number(editTakeRate) || 0);
 
       await virtualAccountApi.updateVirtualAccount(editingVa.id, {
         name: editName.trim(),
@@ -230,6 +247,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
       toast.success("Update virtual account successful");
       setShowEdit(false);
+
       if (selectedAccountId != null) {
         await loadData(selectedAccountId, page);
       }
@@ -413,9 +431,7 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 bg-white/80 px-4 py-3">
               <p className="text-[11px] sm:text-xs text-slate-500">
                 Page{" "}
-                <span className="font-semibold text-slate-800">
-                  {page + 1}
-                </span>{" "}
+                <span className="font-semibold text-slate-800">{page + 1}</span>{" "}
                 of{" "}
                 <span className="font-semibold text-slate-800">
                   {Math.max(totalPages, 1)}

@@ -101,9 +101,7 @@ export const MerchantPages: React.FC = () => {
       setNextCursor(res.metadata?.nextCursor ?? null);
     } catch (err: any) {
       console.error(err);
-      toast.error(
-        err?.response?.data?.message || "Unable to search merchants"
-      );
+      toast.error(err?.response?.data?.message || "Unable to search merchants");
     } finally {
       setSearching(false);
     }
@@ -145,38 +143,28 @@ export const MerchantPages: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header + search merchant */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h1 className="text-xl font-semibold text-slate-900">
-            Merchants &amp; Categories
-          </h1>
-          <div className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs text-slate-700">
+          <h1 className="text-xl font-semibold text-slate-900">Merchants</h1>
+          {/* <div className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs text-slate-700">
             <span className="font-semibold">Account:</span>{" "}
             {activeAccount ? activeAccount.name : "No account selected"}
-          </div>
+          </div> */}
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end"
+          className=" flex-col sm:flex-row gap-3 items-stretch sm:items-end"
         >
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">
-              Enter merchant name...
-            </label>
             <input
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              placeholder="e.g. Facebook, Netflix, Uber..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
             />
-            <p className="mt-1 text-[11px] text-slate-400">
-              Search merchant live from Slash (via Gateway).
-            </p>
           </div>
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 pt-2">
             <button
               type="submit"
               disabled={searching || !activeAccountId}
@@ -203,7 +191,7 @@ export const MerchantPages: React.FC = () => {
       {hasSearched && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
-            Merchant Search Results (Slash)
+            Merchant Search Results
           </h2>
 
           <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
@@ -212,13 +200,16 @@ export const MerchantPages: React.FC = () => {
                 <thead className="bg-slate-100/80 backdrop-blur">
                   <tr className="border-b border-slate-200/70">
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      No
+                    </th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Name
                     </th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Merchant ID
+                      URL
                     </th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      URL
+                      Merchant ID
                     </th>
                   </tr>
                 </thead>
@@ -247,11 +238,11 @@ export const MerchantPages: React.FC = () => {
                         key={m.id}
                         className="bg-white/60 hover:bg-indigo-50/60 transition-colors"
                       >
+                        <td className="px-4 py-3 text-xs sm:text-sm text-slate-700">
+                          {merchants.indexOf(m) + 1}
+                        </td>
                         <td className="px-4 py-3 text-xs sm:text-sm text-slate-900">
                           {m.name || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-[11px] sm:text-xs text-indigo-700 font-mono">
-                          {m.id}
                         </td>
                         <td className="px-4 py-3 text-xs sm:text-sm text-slate-700">
                           {m.url ? (
@@ -266,6 +257,9 @@ export const MerchantPages: React.FC = () => {
                           ) : (
                             "-"
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-[11px] sm:text-xs text-indigo-700 font-mono">
+                          {m.id}
                         </td>
                       </tr>
                     ))

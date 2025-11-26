@@ -11,6 +11,7 @@ import AccountPage from "./pages/Admin/AccountPage";
 import VAPage from "./pages/VA/VAPage";
 import CardGroupPage from "./pages/Cards/CardGroupPage";
 import MerchantPage from "./pages/Merchant/MerchantPage";
+import CardPage from "./pages/Cards/CardPage";
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/virtual-account" element={<VAPage />} />
             <Route path="/card-group" element={<CardGroupPage />} />
             <Route path="/merchant" element={<MerchantPage />} />
+            <Route path="/card" element={<CardPage />} />
           </Route>
         </Route>
 

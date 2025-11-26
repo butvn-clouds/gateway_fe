@@ -14,12 +14,20 @@ export const virtualAccountApi = {
   },
 
   async getByAccountPaged(
-accountId: number, page: number = 0, size: number = 10, undefined: undefined  ): Promise<VirtualAccountPage> {
+    accountId: number,
+    page: number = 0,
+    size: number = 10,
+    search?: string
+  ): Promise<VirtualAccountPage> {
     const safePage =
-      typeof page === "number" && Number.isFinite(page) && page >= 0 ? page : 0;
+      typeof page === "number" && Number.isFinite(page) && page >= 0
+        ? page
+        : 0;
 
     const safeSize =
-      typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 10;
+      typeof size === "number" && Number.isFinite(size) && size > 0
+        ? size
+        : 10;
 
     const res = await api.get<VirtualAccountPage>(
       `/api/virtual-accounts/account/${accountId}`,
@@ -27,9 +35,15 @@ accountId: number, page: number = 0, size: number = 10, undefined: undefined  ):
         params: {
           page: safePage,
           size: safeSize,
+          // BE hiện tại chưa dùng search, nhưng gửi thêm cũng không sao
+          ...(search ? { search } : {}),
         },
       }
     );
+
+    // debug tạm:
+    console.log("VA page response", res.data);
+
     return res.data;
   },
 
