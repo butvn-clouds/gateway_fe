@@ -1,7 +1,5 @@
-// src/components/CardManager.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
-
 import { useAuth } from "../../context/AuthContextProvider";
 import {
   Account,
@@ -30,8 +28,9 @@ interface Props {
 export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const { user, loading: authLoading } = useAuth();
 
-  // ===== ACCOUNT & ACTIVE ACCOUNT =====
+  // ===== AUTH / ACCOUNT =====
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
+
   const activeAccountId: number | null = useMemo(() => {
     if (!accounts || accounts.length === 0) return null;
     if ((user as any)?.activeAccount && (user as any).activeAccount.id) {
@@ -40,7 +39,12 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     return accounts[0].id;
   }, [accounts, user]);
 
-  // ===== META STATE =====
+  const activeAccount = useMemo(
+    () => accounts.find((a) => a.id === activeAccountId) || null,
+    [accounts, activeAccountId]
+  );
+
+  // ===== META: VA / CARD GROUP =====
   const [vaOptions, setVaOptions] = useState<VirtualAccount[]>([]);
   const [vaLoading, setVaLoading] = useState(false);
 
@@ -54,7 +58,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     MerchantCategory[]
   >([]);
 
-  // lookup maps
   const countryLabelMap = useMemo(() => {
     const m = new Map<string, string>();
     countries.forEach((c) => {
@@ -96,7 +99,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setSelectedGroupId(null);
   }, [activeAccountId]);
 
-  // ===== LOAD VA =====
+  // Load VA list
   useEffect(() => {
     const loadVas = async () => {
       if (!activeAccountId) {
@@ -122,7 +125,8 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadVas();
   }, [activeAccountId]);
 
-  // ===== LOAD CARD GROUPS =====
+  
+  // Load card groups
   useEffect(() => {
     const loadGroups = async () => {
       if (!activeAccountId) {
@@ -149,7 +153,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadGroups();
   }, [activeAccountId, selectedVaId]);
 
-  // ===== LOAD META =====
+  // META: countries, mcc, merchant categories
   useEffect(() => {
     const loadMeta = async () => {
       try {
@@ -208,8 +212,14 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   useEffect(() => {
     if (!activeAccountId) return;
     loadCards(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccountId, selectedVaId, selectedGroupId, search, statusFilter, pageSize]);
+  }, [
+    activeAccountId,
+    selectedVaId,
+    selectedGroupId,
+    search,
+    statusFilter,
+    pageSize,
+  ]);
 
   const handleChangePage = (newPage: number) => {
     if (!cardPage) return;
@@ -217,17 +227,38 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadCards(newPage);
   };
 
-  const handleSync = async () => {
-    if (!activeAccountId) return;
-    try {
-      const res = await cardApi.syncFromSlash(activeAccountId);
-      toast.success(`Synced ${res.count} cards from Slash`);
-      await loadCards(page);
-    } catch (err: any) {
-      console.error("sync error:", err?.response?.data || err);
-      toast.error(err?.response?.data?.message || "Sync from Slash failed");
-    }
-  };
+  // const handleSync = async () => {
+  //   if (!activeAccountId) return;
+  //   try {
+  //     const res = await cardApi.syncFromSlash(activeAccountId);
+  //     toast.success(`Synced ${res.count} cards from Slash`);
+  //     await loadCards(page);
+  //   } catch (err: any) {
+  //     console.error("sync error:", err?.response?.data || err);
+  //     toast.error(err?.response?.data?.message || "Sync from Slash failed");
+  //   }
+  // };
+  const handleSyncOneCard = async (card: Card) => {
+  if (!activeAccountId) {
+    toast.error("No active account");
+    return;
+  }
+
+  if (!card.slashId) {
+    toast.error("This card does not have a Slash card id yet");
+    return;
+  }
+
+  try {
+    await cardApi.syncOneFromSlash(activeAccountId, card.slashId);
+    toast.success("Card synced from Slash");
+    await loadCards(page);
+  } catch (e: any) {
+    console.error(e);
+    toast.error(e?.response?.data?.message || "Failed to sync card from Slash");
+  }
+};
+
 
   // ===== MERCHANT SEARCH =====
   const [merchantSearchResult, setMerchantSearchResult] = useState<Merchant[]>(
@@ -279,7 +310,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       performMerchantSearch(undefined);
     }, 400);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merchantSearchQuery, activeAccountId]);
 
   const loadMoreMerchants = () => {
@@ -294,6 +324,9 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     });
     return ids.map((id) => map.get(id) || id);
   };
+
+  const toggleStringInArray = (list: string[], value: string): string[] =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
   // ===== CREATE STATE =====
   const [showCreate, setShowCreate] = useState(false);
@@ -327,14 +360,15 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [editMerchantNames, setEditMerchantNames] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState<string>("");
 
-  // ===== DETAIL STATE =====
+  // ===== DETAIL / VAULT =====
   const [detailCard, setDetailCard] = useState<Card | null>(null);
   const [showCvv, setShowCvv] = useState(false);
+  const [cvvCheckMode, setCvvCheckMode] = useState(false);
+  const [cvvCheckFirst3, setCvvCheckFirst3] = useState("");
+  const [cvvCheckLast3, setCvvCheckLast3] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  const toggleStringInArray = (list: string[], value: string): string[] =>
-    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-
-  // ===== OPEN CREATE =====
+  // ===== OPEN CREATE MODAL =====
   const openCreateModal = () => {
     if (!activeAccountId) {
       toast.error("No active account");
@@ -379,6 +413,67 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setShowCreate(true);
   };
 
+  // ===== BUILD CONSTRAINT PAYLOAD (CREATE / EDIT) =====
+  const buildConstraintPayload = (
+    dailyLimitUsd: number | null,
+    minTxUsd: number | null,
+    maxTxUsd: number | null,
+    countriesAllow: string[],
+    mccCodesAllow: string[],
+    merchantIds: string[],
+    merchantCategorySlashIds: string[]
+  ): Partial<ApiCreateCardParam> => {
+    const payload: Partial<ApiCreateCardParam> = {};
+
+    // Countries (ISO2)
+    const isoCountries = (countriesAllow || [])
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => /^[A-Z]{2}$/.test(c));
+
+    if (isoCountries.length > 0) {
+      payload.countryAllow = isoCountries;
+      payload.countryRestriction = "allowlist";
+    }
+
+    // MCC
+    if (mccCodesAllow && mccCodesAllow.length > 0) {
+      payload.mccAllow = mccCodesAllow;
+      payload.mccRestriction = "allowlist";
+    }
+
+    // Merchants (Slash search result id)
+    if (merchantIds && merchantIds.length > 0) {
+      payload.merchantKeys = merchantIds;
+      payload.merchantRestriction = "allowlist";
+    }
+
+    // Merchant categories (dùng slashId string luôn)
+    if (merchantCategorySlashIds && merchantCategorySlashIds.length > 0) {
+      payload.merchantCategoryIds = merchantCategorySlashIds;
+      payload.merchantCategoryRestriction = "allowlist";
+    }
+
+    // Daily limit
+    if (dailyLimitUsd != null && dailyLimitUsd > 0) {
+      const cents = Math.round(dailyLimitUsd * 100);
+      payload.utilizationLimitAmountCents = cents;
+      payload.utilizationPreset = "daily";
+      payload.utilizationStartDate = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+      payload.utilizationTimezone = "Asia/Ho_Chi_Minh";
+    }
+
+    // Transaction size limit (nếu cần)
+    if (minTxUsd != null && minTxUsd > 0) {
+      payload.txMinAmountCents = Math.round(minTxUsd * 100);
+    }
+    if (maxTxUsd != null && maxTxUsd > 0) {
+      payload.txMaxAmountCents = Math.round(maxTxUsd * 100);
+    }
+
+    return payload;
+  };
+
+  // ===== SUBMIT CREATE =====
   const handleSubmitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAccountId || !createVaId) {
@@ -400,28 +495,27 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         ? createMerchantNames
         : collectMerchantNames(createMerchantIds);
 
+    const constraintPayload = buildConstraintPayload(
+      createDailyLimit,
+      createMinTx,
+      createMaxTx,
+      createCountriesAllow,
+      createMccCodesAllow,
+      createMerchantIds,
+      createMerchantCategories
+    );
+
     const payload: ApiCreateCardParam = {
       accountId: activeAccountId,
       virtualAccountId: createVaId,
       cardGroupId: createGroupId ?? undefined,
-
       name: createName,
-
-      dailyLimitCents: createDailyLimit ?? undefined,
-      minTransactionCents: createMinTx ?? undefined,
-      maxTransactionCents: createMaxTx ?? undefined,
-
-      countriesAllow:
-        createCountriesAllow.length > 0 ? createCountriesAllow : null,
-      mccCodesAllow:
-        createMccCodesAllow.length > 0 ? createMccCodesAllow : null,
-
-      merchantIds: createMerchantIds.length > 0 ? createMerchantIds : null,
-      merchantCategories:
-        createMerchantCategories.length > 0
-          ? createMerchantCategories
-          : null,
-      merchantNamesAllow: merchantNames.length > 0 ? merchantNames : null,
+      // cardProductId (nếu có UI chọn thêm thì set ở đây)
+      ...constraintPayload,
+      userData:
+        merchantNames.length > 0
+          ? { merchantNamesAllow: merchantNames }
+          : undefined,
     };
 
     try {
@@ -435,19 +529,23 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     }
   };
 
-  // ===== OPEN EDIT =====
+  // ===== OPEN EDIT MODAL =====
   const openEditModal = (card: Card) => {
     setEditingCard(card);
 
-    setEditDailyLimit(card.dailyLimitCents ?? null);
-    setEditMinTx(card.minTransactionCents ?? null);
-    setEditMaxTx(card.maxTransactionCents ?? null);
+    setEditDailyLimit(
+      card.dailyLimitCents != null ? card.dailyLimitCents / 100 : null
+    );
+    setEditMinTx(
+      card.minTransactionCents != null ? card.minTransactionCents / 100 : null
+    );
+    setEditMaxTx(
+      card.maxTransactionCents != null ? card.maxTransactionCents / 100 : null
+    );
     setEditCountriesAllow(
       (card.countriesAllow ?? []).map((c: any) => String(c))
     );
-    setEditMccCodesAllow(
-      (card.mccCodesAllow ?? []).map((m: any) => String(m))
-    );
+    setEditMccCodesAllow((card.mccCodesAllow ?? []).map((m: any) => String(m)));
     setEditMerchantIds((card.merchantIds ?? []).map((id: any) => String(id)));
     setEditMerchantCategories(
       (card.merchantCategories ?? []).map((id: any) => String(id))
@@ -460,6 +558,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setMerchantSearchCursor(undefined);
   };
 
+  // ===== SUBMIT EDIT =====
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCard) return;
@@ -474,25 +573,28 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         ? editMerchantNames
         : collectMerchantNames(editMerchantIds);
 
-    const payload: ApiUpdateCardParam = {
+    const constraintPayload = buildConstraintPayload(
+      editDailyLimit,
+      editMinTx,
+      editMaxTx,
+      editCountriesAllow,
+      editMccCodesAllow,
+      editMerchantIds,
+      editMerchantCategories
+    );
+
+    const payload: ApiUpdateCardParam & { status?: string } = {
       name: editingCard.name,
-
-      dailyLimitCents: editDailyLimit ?? undefined,
-      minTransactionCents: editMinTx ?? undefined,
-      maxTransactionCents: editMaxTx ?? undefined,
-
-      countriesAllow:
-        editCountriesAllow.length > 0 ? editCountriesAllow : null,
-      mccCodesAllow:
-        editMccCodesAllow.length > 0 ? editMccCodesAllow : null,
-
-      merchantIds: editMerchantIds.length > 0 ? editMerchantIds : null,
-      merchantCategories:
-        editMerchantCategories.length > 0 ? editMerchantCategories : null,
-      merchantNamesAllow: merchantNames.length > 0 ? merchantNames : null,
-
-      status: editStatus || undefined,
+      ...constraintPayload,
+      userData:
+        merchantNames.length > 0
+          ? { merchantNamesAllow: merchantNames }
+          : undefined,
     };
+
+    if (editStatus && editStatus.trim()) {
+      payload.status = editStatus;
+    }
 
     try {
       await cardApi.update(editingCard.id, payload);
@@ -519,7 +621,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     codes: string[] | undefined | null,
     map: Map<string, string>
   ): string => {
-    if (!codes || codes.length === 0) return "Any";
+    if (!codes || codes.length === 0) return "__";
     return codes.map((c) => map.get(c) || c).join(", ");
   };
 
@@ -540,21 +642,130 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     return "**** **** **** ****";
   };
 
+  const handleConfirmShowCvv = () => {
+    if (!detailCard || !detailCard.pan) {
+      toast.error("Card number is not available");
+      return;
+    }
+
+    const digits = detailCard.pan.replace(/\D/g, "");
+    if (digits.length < 6) {
+      toast.error("Card number is invalid");
+      return;
+    }
+
+    const first3 = digits.slice(0, 3);
+    const last3 = digits.slice(-3);
+
+    if (cvvCheckFirst3 === first3 && cvvCheckLast3 === last3) {
+      setShowCvv(true);
+      setCvvCheckMode(false);
+      setCvvCheckFirst3("");
+      setCvvCheckLast3("");
+    } else {
+      toast.error("Card digits do not match");
+    }
+  };
+
+  // ===== OPEN DETAIL: LOAD VAULT =====
+  const handleOpenDetail = async (card: Card) => {
+    setShowCvv(false);
+    setCvvCheckMode(false);
+    setCvvCheckFirst3("");
+    setCvvCheckLast3("");
+
+    setDetailCard(card);
+    setDetailLoading(true);
+
+    try {
+      const vault = await cardApi.getVaultCard(card.id);
+      const v = vault && vault.data ? vault.data : vault || {};
+
+      const updated: Card = {
+        ...card,
+        pan: v.pan ?? (v.card_number as string | undefined) ?? card.pan ?? null,
+        cvv: v.cvv ?? card.cvv ?? null,
+        last4: v.last4 ?? card.last4 ?? null,
+        expiryMonth:
+          v.exp_month ??
+          v.expiry_month ??
+          v.expiryMonth ??
+          card.expiryMonth ??
+          null,
+        expiryYear:
+          v.exp_year ??
+          v.expiry_year ??
+          v.expiryYear ??
+          card.expiryYear ??
+          null,
+      };
+
+      setDetailCard(updated);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load card from Vault");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   // ===== RENDER =====
   if (authLoading) {
-    return <div>Loading authentication...</div>;
+    return (
+      <div className="flex items-center justify-center h-64 text-slate-500">
+        Loading authentication...
+      </div>
+    );
   }
 
   return (
     <div className="space-y-5">
-      {/* HEADER + FILTERS */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* TOP SUMMARY CARD */}
+      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 text-white shadow-lg p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="text-xs uppercase tracking-[0.16em] text-indigo-100">
+            Cards management
+          </div>
+          <div className="text-xl font-semibold">
+            {activeAccount ? activeAccount.name : "No active account"}
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs text-indigo-100/90">
+            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+              Accounts: {accounts.length}
+            </span>
+            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              Virtual accounts: {vaLoading ? "..." : vaOptions.length || "0"}
+            </span>
+            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+              Card groups: {cardGroupLoading ? "..." : cardGroups.length || "0"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            className="rounded-full bg-white text-indigo-700 px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+            onClick={openCreateModal}
+            disabled={vaOptions.length === 0}
+          >
+            + Create card
+          </button>
+        </div>
+      </div>
+
+      {/* FILTER BAR */}
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200/60 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {/* Group filter */}
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">Group:</span>
+            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+              Group
+            </span>
             <select
-              className="border rounded-full px-3 py-1 min-w-[160px] bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
               value={selectedGroupId ?? ""}
               onChange={(e) =>
                 setSelectedGroupId(
@@ -562,7 +773,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 )
               }
             >
-              <option value="">All</option>
+              <option value="">All groups</option>
               {cardGroups.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
@@ -573,17 +784,17 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
           {/* Virtual account filter */}
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">
-              Virtual account:
+            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+              Virtual account
             </span>
             <select
-              className="border rounded-full px-3 py-1 min-w-[160px] bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
               value={selectedVaId ?? ""}
               onChange={(e) =>
                 setSelectedVaId(e.target.value ? Number(e.target.value) : null)
               }
             >
-              <option value="">All</option>
+              <option value="">All virtual accounts</option>
               {vaOptions.map((va) => (
                 <option key={va.id} value={va.id}>
                   {va.name || va.id}
@@ -594,100 +805,123 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
           {/* Status filter */}
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">Status:</span>
+            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+              Status
+            </span>
             <select
-              className="border rounded-full px-3 py-1 min-w-[140px] bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="border border-slate-200 rounded-full px-3 py-1 min-w-[140px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="">All</option>
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-              <option value="closed">closed</option>
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
             </select>
           </div>
+        </div>
 
-          {/* Search */}
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">Card:</span>
+        {/* search */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
             <input
-              className="border rounded-full px-3 py-1 text-sm min-w-[220px] bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="border border-slate-200 rounded-full pl-9 pr-3 py-1.5 text-sm min-w-[220px] bg-slate-50 text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
               placeholder="Search by name or last 4..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            <span className="absolute left-3 top-1.5 text-slate-400 text-xs">
+              🔍
+            </span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            className="rounded-full border border-indigo-500 text-indigo-600 px-4 py-1 text-sm bg-white hover:bg-indigo-50 shadow-sm"
-            onClick={handleSync}
-          >
-            Sync from Slash
-          </button>
-          <button
-            className="rounded-full bg-indigo-600 text-white px-5 py-1.5 text-sm shadow-md hover:bg-indigo-700 disabled:opacity-50"
-            onClick={openCreateModal}
-            disabled={vaOptions.length === 0}
-          >
-            + Create card
-          </button>
         </div>
       </div>
 
       {/* CARD TABLE */}
-      <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+      <div className="border border-slate-200/70 rounded-2xl overflow-hidden bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50/90 text-slate-600 border-b border-slate-200/80">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold">Card</th>
-              <th className="px-4 py-3 text-left font-semibold">Group</th>
-              <th className="px-4 py-3 text-left font-semibold">
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Card
+              </th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Group
+              </th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
                 Virtual account
               </th>
-              <th className="px-4 py-3 text-left font-semibold">Daily limit</th>
-              <th className="px-4 py-3 text-left font-semibold">Status</th>
-              <th className="px-4 py-3 text-left font-semibold">Created</th>
-              <th className="px-4 py-3 text-left font-semibold">Expiry</th>
-              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Daily limit
+              </th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Status
+              </th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Created
+              </th>
+              <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide">
+                Expiry
+              </th>
+              <th className="px-4 py-3 text-right font-semibold text-xs uppercase tracking-wide">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             {cardLoading || !cardPage ? (
               <tr>
-                <td colSpan={8} className="px-4 py-5 text-center text-slate-500">
-                  {cardLoading ? "Loading cards..." : "No data"}
+                <td
+                  colSpan={8}
+                  className="px-4 py-8 text-center text-slate-500 text-sm"
+                >
+                  {cardLoading ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="inline-block h-5 w-5 border-[3px] border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Loading cards...</span>
+                    </div>
+                  ) : (
+                    "No data"
+                  )}
                 </td>
               </tr>
             ) : !cardPage.content || cardPage.content.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-5 text-center text-slate-500">
+                <td
+                  colSpan={8}
+                  className="px-4 py-8 text-center text-slate-500 text-sm"
+                >
                   No cards found
                 </td>
               </tr>
             ) : (
-              cardPage.content.map((card) => (
+              cardPage.content.map((card, idx) => (
                 <tr
                   key={card.id}
-                  className="border-t last:border-b hover:bg-slate-50/70"
+                  className={`border-t border-slate-100/80 transition hover:bg-indigo-50/40 ${
+                    idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"
+                  }`}
                 >
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      className="text-indigo-600 font-medium hover:underline"
-                      onClick={() => {
-                        setDetailCard(card);
-                        setShowCvv(false);
-                      }}
-                    >
-                      {card.name}
-                    </button>
-                    {card.last4 && (
-                      <span className="ml-2 inline-flex items-center text-xs bg-emerald-100 text-emerald-700 rounded-full px-2 py-[1px]">
-                        **** {card.last4}
-                      </span>
-                    )}
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-indigo-600 font-medium hover:text-indigo-700 hover:underline disabled:opacity-60 transition"
+                        onClick={() => handleOpenDetail(card)}
+                        disabled={detailLoading && detailCard?.id === card.id}
+                      >
+                        <span className="truncate max-w-[220px]">
+                          {card.name}
+                        </span>
+                        {detailLoading && detailCard?.id === card.id && (
+                          <span className="inline-block h-3 w-3 border-[2px] border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                        )}
+                      </button>
+                      {card.last4 && (
+                        <span className="inline-flex items-center text-[11px] bg-emerald-50 text-emerald-700 rounded-full px-2 py-[1px] w-fit">
+                          **** {card.last4}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">
                     {card.cardGroupName || "-"}
@@ -696,13 +930,21 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     {card.virtualAccountName || card.virtualAccountId || "-"}
                   </td>
                   <td className="px-4 py-3 text-slate-700">
-                    {card.dailyLimitCents != null && card.dailyLimitCents > 0
-                      ? "Limited"
-                      : "No limit"}
+                    <span
+                      className={`inline-flex items-center px-2 py-[2px] rounded-full text-[11px] font-medium ${
+                        card.dailyLimitCents != null && card.dailyLimitCents > 0
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {card.dailyLimitCents != null && card.dailyLimitCents > 0
+                        ? "Limited"
+                        : "No limit"}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex px-2 py-[2px] rounded-full text-xs font-medium ${
+                      className={`inline-flex px-2 py-[2px] rounded-full text-[11px] font-medium ${
                         card.status === "active"
                           ? "bg-emerald-50 text-emerald-700"
                           : card.status === "closed"
@@ -710,25 +952,25 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                           : "bg-slate-50 text-slate-600"
                       }`}
                     >
-                      {card.status || "unknown"}
+                      {card.status || "Unknown"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="px-4 py-3 text-slate-700 text-sm">
                     {card.createdAt
                       ? new Date(card.createdAt).toLocaleDateString()
                       : "-"}
                   </td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="px-4 py-3 text-slate-700 text-sm">
                     {card.expiryMonth && card.expiryYear
                       ? `${card.expiryMonth}/${card.expiryYear}`
                       : "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      className="border rounded-lg px-3 py-1 text-xs hover:bg-slate-100"
+                      className="inline-flex items-center gap-1 border border-slate-200 rounded-full px-3 py-1 text-[11px] font-medium bg-white hover:bg-slate-50 hover:border-slate-300 transition"
                       onClick={() => openEditModal(card)}
                     >
-                      Edit
+                      ✏️ Edit
                     </button>
                   </td>
                 </tr>
@@ -740,23 +982,24 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
       {/* PAGINATION */}
       {cardPage && cardPage.totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>
+        <div className="flex items-center justify-between text-sm text-slate-600 mt-1">
+          <span className="text-xs md:text-sm">
             Total cards:{" "}
-            <span className="font-semibold">{cardPage.totalElements}</span> — Page{" "}
+            <span className="font-semibold">{cardPage.totalElements}</span>{" "}
+            &mdash; Page{" "}
             <span className="font-semibold">{cardPage.page + 1}</span> /{" "}
             {cardPage.totalPages}
           </span>
           <div className="space-x-2">
             <button
-              className="border px-3 py-1 rounded-md bg-white hover:bg-slate-50 disabled:opacity-50"
+              className="border px-3 py-1 rounded-full bg-white hover:bg-slate-50 disabled:opacity-40 text-xs md:text-sm transition"
               disabled={cardPage.page === 0}
               onClick={() => handleChangePage(cardPage.page - 1)}
             >
               Prev
             </button>
             <button
-              className="border px-3 py-1 rounded-md bg-white hover:bg-slate-50 disabled:opacity-50"
+              className="border px-3 py-1 rounded-full bg-white hover:bg-slate-50 disabled:opacity-40 text-xs md:text-sm transition"
               disabled={cardPage.page + 1 >= cardPage.totalPages}
               onClick={() => handleChangePage(cardPage.page + 1)}
             >
@@ -769,14 +1012,19 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       {/* CREATE MODAL */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto space-y-4 border border-slate-200">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="font-semibold text-lg text-slate-800">
-                Create new card
-              </h2>
+              <div>
+                <h2 className="font-semibold text-lg text-slate-900">
+                  Create new card
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Configure limits and rules for the new card.
+                </p>
+              </div>
               <button
                 type="button"
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 text-xl"
                 onClick={() => setShowCreate(false)}
               >
                 ✕
@@ -786,12 +1034,12 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
             <form onSubmit={handleSubmitCreate} className="space-y-5">
               {/* VA + Group */}
               <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
                     Virtual account
                   </label>
                   <select
-                    className="border rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                     value={createVaId ?? ""}
                     onChange={(e) =>
                       setCreateVaId(
@@ -808,12 +1056,12 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
                     Card group (optional)
                   </label>
                   <select
-                    className="border rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                     value={createGroupId ?? ""}
                     onChange={(e) =>
                       setCreateGroupId(
@@ -833,76 +1081,46 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
               {/* BASIC INFO + LIMITS */}
               <div className="grid md:grid-cols-3 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                <div className="md:col-span-2 bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
                     Card name
                   </label>
                   <input
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Daily limit (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    placeholder="Leave empty for no limit"
-                    value={createDailyLimit ?? ""}
-                    onChange={(e) =>
-                      setCreateDailyLimit(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Min transaction (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={createMinTx ?? ""}
-                    onChange={(e) =>
-                      setCreateMinTx(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Max transaction (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={createMaxTx ?? ""}
-                    onChange={(e) =>
-                      setCreateMaxTx(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
+                <div className="space-y-3">
+                  <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                      Daily limit (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                      placeholder="Empty = no limit"
+                      value={createDailyLimit ?? ""}
+                      onChange={(e) =>
+                        setCreateDailyLimit(
+                          e.target.value === "" ? null : Number(e.target.value)
+                        )
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* RULES SECTION */}
               <div className="grid md:grid-cols-3 gap-4 text-sm">
-                {/* Countries */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                {/* Countries allow */}
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Countries allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {metaLoading ? (
                       <div className="text-xs text-slate-500">Loading...</div>
                     ) : (
@@ -913,6 +1131,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                         >
                           <input
                             type="checkbox"
+                            className="rounded border-slate-300"
                             checked={createCountriesAllow.includes(c.code)}
                             onChange={() =>
                               setCreateCountriesAllow((prev) =>
@@ -930,12 +1149,12 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 </div>
 
-                {/* MCC */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                {/* MCC codes allow */}
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     MCC codes allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {metaLoading ? (
                       <div className="text-xs text-slate-500">Loading...</div>
                     ) : (
@@ -946,6 +1165,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                         >
                           <input
                             type="checkbox"
+                            className="rounded border-slate-300"
                             checked={createMccCodesAllow.includes(m.code)}
                             onChange={() =>
                               setCreateMccCodesAllow((prev) =>
@@ -963,11 +1183,11 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
 
                 {/* Merchant categories */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Merchant categories allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {merchantCategories.map((cat) => (
                       <label
                         key={cat.id}
@@ -975,6 +1195,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       >
                         <input
                           type="checkbox"
+                          className="rounded border-slate-300"
                           checked={createMerchantCategories.includes(
                             cat.slashId
                           )}
@@ -992,13 +1213,13 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </div>
 
               {/* MERCHANT RULES */}
-              <div className="space-y-2 text-sm">
-                <div className="font-semibold text-slate-700">
+              <div className="space-y-2 text-sm rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                <div className="font-semibold text-slate-700 text-xs uppercase tracking-wide">
                   Merchants allow
                 </div>
                 <div className="flex gap-2 items-center">
                   <input
-                    className="border rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
                     placeholder="Type at least 3 characters to search merchant..."
                     value={merchantSearchQuery}
                     onChange={(e) => setMerchantSearchQuery(e.target.value)}
@@ -1006,7 +1227,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   {merchantSearchCursor && (
                     <button
                       type="button"
-                      className="border rounded-lg px-3 py-1 text-sm bg-white hover:bg-slate-50"
+                      className="border border-slate-200 rounded-lg px-3 py-1 text-sm bg-white hover:bg-slate-50"
                       onClick={loadMoreMerchants}
                     >
                       Load more
@@ -1014,7 +1235,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   )}
                 </div>
 
-                {/* Selected merchants pills */}
                 {createMerchantIds.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-1">
                     {createMerchantIds.map((id, index) => {
@@ -1048,16 +1268,15 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 )}
 
-                <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 mt-1 bg-slate-50/40">
+                <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 mt-1 bg-white/80">
                   {merchantSearching && (
                     <div className="text-xs text-slate-500">Searching...</div>
                   )}
-                  {!merchantSearching &&
-                    merchantSearchResult.length === 0 && (
-                      <div className="text-xs text-slate-500">
-                        Type at least 3 characters to search.
-                      </div>
-                    )}
+                  {!merchantSearching && merchantSearchResult.length === 0 && (
+                    <div className="text-xs text-slate-500">
+                      Type at least 3 characters to search.
+                    </div>
+                  )}
                   {merchantSearchResult.map((m) => (
                     <label
                       key={m.id}
@@ -1065,6 +1284,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     >
                       <input
                         type="checkbox"
+                        className="rounded border-slate-300"
                         checked={createMerchantIds.includes(m.id)}
                         onChange={() => {
                           setCreateMerchantIds((prev) =>
@@ -1101,14 +1321,14 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  className="border rounded-lg px-4 py-1.5 bg-white hover:bg-slate-50"
+                  className="border border-slate-200 rounded-full px-4 py-1.5 bg-white hover:bg-slate-50 text-sm"
                   onClick={() => setShowCreate(false)}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 text-white rounded-lg px-5 py-1.5 shadow-md hover:bg-indigo-700"
+                  className="bg-indigo-600 text-white rounded-full px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-700"
                 >
                   Create
                 </button>
@@ -1121,14 +1341,19 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       {/* EDIT MODAL */}
       {editingCard && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto space-y-4 border border-slate-200">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="font-semibold text-lg text-slate-800">
-                Edit card #{editingCard.id}
-              </h2>
+              <div>
+                <h2 className="font-semibold text-lg text-slate-900">
+                  Edit card #{editingCard.id}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Update limits and merchant rules for this card.
+                </p>
+              </div>
               <button
                 type="button"
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 text-xl"
                 onClick={() => setEditingCard(null)}
               >
                 ✕
@@ -1138,98 +1363,68 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
             <form onSubmit={handleSubmitEdit} className="space-y-5">
               {/* name + status + limits */}
               <div className="grid md:grid-cols-3 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                <div className="md:col-span-2 bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
                     Card name
                   </label>
                   <input
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
                     value={editingCard.name}
                     onChange={(e) =>
                       setEditingCard({ ...editingCard, name: e.target.value })
                     }
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Status
-                  </label>
-                  <select
-                    className="border rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value)}
-                  >
-                    <option value="">Keep current</option>
-                    <option value="active">active</option>
-                    <option value="inactive">inactive</option>
-                    <option value="closed">closed</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Daily limit (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={editDailyLimit ?? ""}
-                    onChange={(e) =>
-                      setEditDailyLimit(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Min transaction (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={editMinTx ?? ""}
-                    onChange={(e) =>
-                      setEditMinTx(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Max transaction (USD)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="border rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={editMaxTx ?? ""}
-                    onChange={(e) =>
-                      setEditMaxTx(
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
+                <div className="space-y-3">
+                  <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                      Status
+                    </label>
+                    <select
+                      className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                    >
+                      <option value="">Keep current</option>
+                      <option value="active">Active</option>
+                      <option value="paused">Paused</option>
+                    </select>
+                  </div>
+                  <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                      Daily limit (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                      value={editDailyLimit ?? ""}
+                      onChange={(e) =>
+                        setEditDailyLimit(
+                          e.target.value === "" ? null : Number(e.target.value)
+                        )
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* RULES */}
               <div className="grid md:grid-cols-3 gap-4 text-sm">
                 {/* Countries */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Countries allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {countries.map((c) => (
                       <label
-                        key={c.code}
+                        key={c.id}
                         className="flex items-center gap-2 text-slate-700"
                       >
                         <input
                           type="checkbox"
+                          className="rounded border-slate-300"
                           checked={editCountriesAllow.includes(c.code)}
                           onChange={() =>
                             setEditCountriesAllow((prev) =>
@@ -1247,18 +1442,19 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
 
                 {/* MCC */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     MCC codes allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {mccCodes.map((m) => (
                       <label
-                        key={m.code}
+                        key={m.id}
                         className="flex items-center gap-2 text-slate-700"
                       >
                         <input
                           type="checkbox"
+                          className="rounded border-slate-300"
                           checked={editMccCodesAllow.includes(m.code)}
                           onChange={() =>
                             setEditMccCodesAllow((prev) =>
@@ -1275,11 +1471,11 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
 
                 {/* Merchant categories */}
-                <div>
-                  <div className="font-semibold mb-1 text-slate-700">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                  <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Merchant categories allow
                   </div>
-                  <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-slate-50/40">
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 bg-white/80">
                     {merchantCategories.map((cat) => (
                       <label
                         key={cat.id}
@@ -1287,9 +1483,8 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       >
                         <input
                           type="checkbox"
-                          checked={editMerchantCategories.includes(
-                            cat.slashId
-                          )}
+                          className="rounded border-slate-300"
+                          checked={editMerchantCategories.includes(cat.slashId)}
                           onChange={() =>
                             setEditMerchantCategories((prev) =>
                               toggleStringInArray(prev, cat.slashId)
@@ -1304,13 +1499,13 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </div>
 
               {/* MERCHANT RULES EDIT */}
-              <div className="space-y-2 text-sm">
-                <div className="font-semibold text-slate-700">
+              <div className="space-y-2 text-sm rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                <div className="font-semibold text-slate-700 text-xs uppercase tracking-wide">
                   Merchants allow
                 </div>
                 <div className="flex gap-2 items-center">
                   <input
-                    className="border rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
                     placeholder="Type at least 3 characters to search merchant..."
                     value={merchantSearchQuery}
                     onChange={(e) => setMerchantSearchQuery(e.target.value)}
@@ -1318,7 +1513,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   {merchantSearchCursor && (
                     <button
                       type="button"
-                      className="border rounded-lg px-3 py-1 text-sm bg-white hover:bg-slate-50"
+                      className="border border-slate-200 rounded-lg px-3 py-1 text-sm bg-white hover:bg-slate-50"
                       onClick={loadMoreMerchants}
                     >
                       Load more
@@ -1326,7 +1521,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   )}
                 </div>
 
-                {/* Selected merchants pills */}
                 {editMerchantIds.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-1">
                     {editMerchantIds.map((id, index) => {
@@ -1360,16 +1554,15 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 )}
 
-                <div className="border rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 mt-1 bg-slate-50/40">
+                <div className="border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto space-y-1 mt-1 bg-white/80">
                   {merchantSearching && (
                     <div className="text-xs text-slate-500">Searching...</div>
                   )}
-                  {!merchantSearching &&
-                    merchantSearchResult.length === 0 && (
-                      <div className="text-xs text-slate-500">
-                        Type at least 3 characters to search.
-                      </div>
-                    )}
+                  {!merchantSearching && merchantSearchResult.length === 0 && (
+                    <div className="text-xs text-slate-500">
+                      Type at least 3 characters to search.
+                    </div>
+                  )}
                   {merchantSearchResult.map((m) => (
                     <label
                       key={m.id}
@@ -1377,6 +1570,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     >
                       <input
                         type="checkbox"
+                        className="rounded border-slate-300"
                         checked={editMerchantIds.includes(m.id)}
                         onChange={() => {
                           setEditMerchantIds((prev) =>
@@ -1385,8 +1579,9 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                           const name = m.name || m.id;
                           setEditMerchantNames((prev) => {
                             const existsIndex = prev.indexOf(name);
-                            const currentlySelected =
-                              editMerchantIds.includes(m.id);
+                            const currentlySelected = editMerchantIds.includes(
+                              m.id
+                            );
                             if (!currentlySelected && existsIndex === -1) {
                               return [...prev, name];
                             }
@@ -1413,16 +1608,16 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  className="border rounded-lg px-4 py-1.5 bg-white hover:bg-slate-50"
+                  className="border border-slate-200 rounded-full px-4 py-1.5 bg-white hover:bg-slate-50 text-sm"
                   onClick={() => setEditingCard(null)}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 text-white rounded-lg px-5 py-1.5 shadow-md hover:bg-indigo-700"
+                  className="bg-indigo-600 text-white rounded-full px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-700"
                 >
-                  Save
+                  Save changes
                 </button>
               </div>
             </form>
@@ -1433,12 +1628,22 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       {/* DETAIL MODAL */}
       {detailCard && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-slate-50 rounded-2xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-50 rounded-2xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto border border-slate-200">
             {/* HEADER */}
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Card details
-              </h2>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    Card details
+                  </h2>
+                  {detailLoading && (
+                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                      <span className="inline-block h-3 w-3 border-[2px] border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      Loading secure data...
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
                 type="button"
                 className="text-rose-500 text-xl leading-none"
@@ -1448,12 +1653,8 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </button>
             </div>
 
-            {/* TEXT INFO (giống hình 1) */}
+            {/* TEXT INFO */}
             <div className="space-y-1 text-sm text-slate-800 mb-4">
-              <p>
-                <span className="font-semibold">Card name: </span>
-                {detailCard.name}
-              </p>
               <p>
                 <span className="font-semibold">Status: </span>
                 {detailCard.status}
@@ -1466,12 +1667,13 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 <span className="font-semibold">Group: </span>
                 {detailCard.cardGroupName || "-"}
               </p>
-              {detailCard.isPhysical !== undefined && detailCard.isPhysical !== null && (
-                <p>
-                  <span className="font-semibold">Physical card: </span>
-                  {detailCard.isPhysical ? "Yes" : "No"}
-                </p>
-              )}
+              {detailCard.isPhysical !== undefined &&
+                detailCard.isPhysical !== null && (
+                  <p>
+                    <span className="font-semibold">Physical card: </span>
+                    {detailCard.isPhysical ? "Yes" : "No"}
+                  </p>
+                )}
               {detailCard.isSingleUse !== undefined &&
                 detailCard.isSingleUse !== null && (
                   <p>
@@ -1480,30 +1682,86 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </p>
                 )}
 
-              {/* PAN luôn hiện full */}
-              <p>
-                <span className="font-semibold">Card number (PAN): </span>
-                {formatPanForDisplay(detailCard.pan, detailCard.last4 || null)}
-              </p>
+              {/* CVV + VERIFY */}
+              <p className="flex flex-col gap-1 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">CVV:</span>
+                  {detailCard.cvv && !showCvv && (
+                    <button
+                      type="button"
+                      className="text-xs text-indigo-600 underline"
+                      onClick={() => {
+                        setCvvCheckMode(true);
+                        setCvvCheckFirst3("");
+                        setCvvCheckLast3("");
+                      }}
+                    >
+                      Show CVV
+                    </button>
+                  )}
+                  {detailCard.cvv && showCvv && (
+                    <button
+                      type="button"
+                      className="text-xs text-indigo-600 underline"
+                      onClick={() => {
+                        setShowCvv(false);
+                        setCvvCheckMode(false);
+                      }}
+                    >
+                      Hide CVV
+                    </button>
+                  )}
+                </div>
 
-              {/* CVV: *** Show CVV */}
-              <p className="flex items-center gap-2">
-                <span className="font-semibold">CVV:</span>
-                <span>
-                  {detailCard.cvv
-                    ? showCvv
-                      ? detailCard.cvv
-                      : "***"
-                    : "***"}
-                </span>
-                {detailCard.cvv && (
-                  <button
-                    type="button"
-                    className="text-xs text-indigo-600 underline"
-                    onClick={() => setShowCvv((v) => !v)}
-                  >
-                    {showCvv ? "Hide CVV" : "Show CVV"}
-                  </button>
+                {cvvCheckMode && !showCvv && (
+                  <div className="flex flex-wrap items-center gap-2 pl-6">
+                    <span className="text-xs text-slate-600">
+                      Enter first 3 and last 3 digits of this card:
+                    </span>
+                    <input
+                      type="password"
+                      maxLength={3}
+                      className="border border-slate-300 rounded px-2 py-1 w-14 text-center text-xs bg-white"
+                      value={cvvCheckFirst3}
+                      onChange={(e) =>
+                        setCvvCheckFirst3(
+                          e.target.value.replace(/\D/g, "").slice(0, 3)
+                        )
+                      }
+                      placeholder="123"
+                    />
+                    <span className="text-xs text-slate-500">...</span>
+                    <input
+                      type="password"
+                      maxLength={3}
+                      className="border border-slate-300 rounded px-2 py-1 w-14 text-center text-xs bg-white"
+                      value={cvvCheckLast3}
+                      onChange={(e) =>
+                        setCvvCheckLast3(
+                          e.target.value.replace(/\D/g, "").slice(0, 3)
+                        )
+                      }
+                      placeholder="456"
+                    />
+                    <button
+                      type="button"
+                      className="text-xs px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700"
+                      onClick={handleConfirmShowCvv}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded-full border border-slate-300 bg-white hover:bg-slate-50"
+                      onClick={() => {
+                        setCvvCheckMode(false);
+                        setCvvCheckFirst3("");
+                        setCvvCheckLast3("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
               </p>
 
@@ -1513,12 +1771,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   {detailCard.last4}
                 </p>
               )}
-              {detailCard.expiryMonth && detailCard.expiryYear && (
-                <p>
-                  <span className="font-semibold">Expiry: </span>
-                  {detailCard.expiryMonth}/{detailCard.expiryYear}
-                </p>
-              )}
+
               <p>
                 <span className="font-semibold">Created at: </span>
                 {detailCard.createdAt
@@ -1527,32 +1780,28 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </p>
             </div>
 
-            {/* CARD FRONT / BACK (hình 2 + 3) */}
-            <div className="grid md:grid-cols-2 gap-4 mb-5">
+            {/* CARD FRONT / BACK */}
+            <div className="grid md:grid-cols-2 h-[190px] gap-4 mb-5">
               {/* FRONT */}
               <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white px-5 py-4">
                 <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-slate-300">
-                      Card name
-                    </div>
-                    <div className="text-sm font-semibold">
-                      {detailCard.name}
-                    </div>
-                  </div>
-                  <div className="text-lg font-bold tracking-widest">
-                    VISA
-                  </div>
+                  <div></div>
+                  <div className="text-lg font-bold tracking-widest">VISA</div>
                 </div>
 
-                <div className="text-lg tracking-[0.25em] font-mono mb-4">
-                  {formatPanForDisplay(detailCard.pan, detailCard.last4 || null)}
+                <div className="text-lg font-bold pt-5 tracking-[0.25em] font-mono mb-4">
+                  {detailLoading && !detailCard.pan
+                    ? "**** **** **** ****"
+                    : formatPanForDisplay(
+                        detailCard.pan,
+                        detailCard.last4 || null
+                      )}
                 </div>
 
                 <div className="flex items-end justify-between text-xs">
                   <div>
                     <div className="uppercase text-[10px] text-slate-300 mb-1">
-                      Card holder
+                      Card Name
                     </div>
                     <div className="font-semibold truncate max-w-[150px]">
                       {detailCard.name || "Card holder"}
@@ -1582,7 +1831,9 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
 
                 <div className="bg-slate-100 text-slate-900 rounded-lg px-3 py-2 font-mono text-sm tracking-[0.3em]">
-                  {detailCard.cvv
+                  {detailLoading && !detailCard.cvv
+                    ? "***"
+                    : detailCard.cvv
                     ? showCvv
                       ? detailCard.cvv
                       : "***"
@@ -1615,7 +1866,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 {detailCard.merchantNamesAllow &&
                 detailCard.merchantNamesAllow.length > 0
                   ? detailCard.merchantNamesAllow.join(", ")
-                  : "Any"}
+                  : "__"}
               </p>
               <p>
                 <span className="font-semibold">

@@ -1,4 +1,3 @@
-// src/api/api.card.ts
 import api from "../config/api.config";
 import {
   ApiCreateCardParam,
@@ -7,13 +6,13 @@ import {
   CardPage,
   CardCountryOption,
   MccCodeOption,
-  CardSpendingConstraintParam,
   CardUtilization,
 } from "../types/Types";
 
 export interface GetPagedCardsParams {
   accountId: number;
   virtualAccountId?: number | null;
+  // cardGroupId giờ BE chưa filter theo local id, có thể map sau
   cardGroupId?: number | null;
   page: number;
   size: number;
@@ -24,10 +23,12 @@ export interface GetPagedCardsParams {
 }
 
 export const cardApi = {
-  // ================== LIST / SEARCH (local DB) ==================
+  /**
+   * GET /api/accounts/{accountId}/cards
+   * BE: CardController.listCards(accountId, virtualAccountId, page, size, ...)
+   */
   async getPagedCards(params: GetPagedCardsParams): Promise<CardPage> {
     const query: any = {
-      accountId: params.accountId,
       page: params.page,
       size: params.size,
     };
@@ -35,9 +36,7 @@ export const cardApi = {
     if (params.virtualAccountId != null) {
       query.virtualAccountId = params.virtualAccountId;
     }
-    if (params.cardGroupId != null) {
-      query.cardGroupId = params.cardGroupId;
-    }
+    // nếu sau này BE support search/status/sort thì gửi, BE ko dùng thì cũng không sao
     if (params.search && params.search.trim()) {
       query.search = params.search.trim();
     }
@@ -51,75 +50,118 @@ export const cardApi = {
       query.dir = params.dir.trim();
     }
 
-    const { data } = await api.get<CardPage>("/api/cards", { params: query });
-    return data;
-  },
-
-  // ================== SYNC TỪ SLASH ==================
-  async syncFromSlash(
-    accountId: number
-  ): Promise<{ message: string; count: number }> {
-    const { data } = await api.post<{ message: string; count: number }>(
-      "/api/cards/sync",
-      null,
-      { params: { accountId } }
+    const { data } = await api.get<CardPage>(
+      `/api/accounts/${params.accountId}/cards`,
+      { params: query }
     );
     return data;
   },
 
-  // ================== CRUD CARD ==================
+  /**
+   * POST /api/accounts/{accountId}/cards/sync/{slashCardId}
+   * match CardController.syncCardFromSlash
+   */
+  syncFromSlash(accountId: number) {
+    return api.get(`/api/accounts/${accountId}/cards/sync`);
+  },
+
+  syncOneFromSlash(accountId: number, slashCardId: string) {
+    return api.get(
+      `/api/accounts/${accountId}/cards/sync/${encodeURIComponent(slashCardId)}`
+    );
+  },
+  /**
+   * POST /api/accounts/{accountId}/cards
+   * Body map thẳng sang CardCreateRequest (flatten fields)
+   */
   async create(params: ApiCreateCardParam): Promise<Card> {
-    const { data } = await api.post<Card>("/api/cards", params);
+    const { accountId, ...body } = params;
+
+    // Nếu BE còn field extra (accountId trong body) thì có thể giữ lại:
+    // const payload = { ...body, accountId };
+    const payload = body;
+
+    const { data } = await api.post<Card>(
+      `/api/accounts/${accountId}/cards`,
+      payload
+    );
     return data;
   },
 
-  async update(id: number, params: ApiUpdateCardParam): Promise<Card> {
-    const { data } = await api.patch<Card>(`/api/cards/${id}`, params);
-    return data;
-  },
-
-  // ================== SPENDING CONSTRAINT ==================
-  async replaceSpendingConstraint(
-    id: number,
-    constraint: CardSpendingConstraintParam
+  /**
+   * PUT /api/accounts/{accountId}/cards/{cardId}
+   * match CardController.updateCard
+   */
+  async update(
+    accountId: number,
+    cardId: number,
+    params: ApiUpdateCardParam
   ): Promise<Card> {
     const { data } = await api.put<Card>(
-      `/api/cards/${id}/spending-constraint`,
-      constraint
+      `/api/accounts/${accountId}/cards/${cardId}`,
+      params
     );
     return data;
   },
 
-  // ================== UTILIZATION / VAULT ==================
-  async getUtilization(id: number): Promise<CardUtilization> {
+  /**
+   * GET /api/accounts/{accountId}/cards/{cardId}
+   * match CardController.getCard
+   */
+  async getById(accountId: number, cardId: number): Promise<Card> {
+    const { data } = await api.get<Card>(
+      `/api/accounts/${accountId}/cards/${cardId}`
+    );
+    return data;
+  },
+
+  /**
+   * GET /api/accounts/{accountId}/cards/{cardId}/detail
+   * match CardController.getCardDetailFromSlash
+   * includePan/includeCvv để BE truyền xuống Slash vault
+   */
+  async getVaultCard(
+    accountId: number,
+    cardId: number,
+    includePan: boolean = true,
+    includeCvv: boolean = true
+  ): Promise<any> {
+    const { data } = await api.get<any>(
+      `/api/accounts/${accountId}/cards/${cardId}/detail`,
+      {
+        params: {
+          includePan,
+          includeCvv,
+        },
+      }
+    );
+    return data;
+  },
+
+  /**
+   * GET /api/accounts/{accountId}/cards/{cardId}/utilization
+   * Cần mapping 1 endpoint trên BE gọi SlashClient.getCardUtilization
+   */
+  async getUtilization(
+    accountId: number,
+    cardId: number
+  ): Promise<CardUtilization> {
     const { data } = await api.get<CardUtilization>(
-      `/api/cards/${id}/utilization`
+      `/api/accounts/${accountId}/cards/${cardId}/utilization`
     );
-    return data;
-  }
-
-  // nếu cần show PAN + CVV (ở BE trả raw JsonNode), type để any cho flexible
-  ,
-  async getVaultCard(id: number): Promise<any> {
-    const { data } = await api.get<any>(`/api/cards/${id}/vault`);
     return data;
   },
 
-  // ================== META (COUNTRIES / MCC CODES) ==================
-  // Giả sử BE:
-  //   GET /api/meta/countries   -> CardCountryOption[]
-  //   GET /api/meta/mcc-codes  -> MccCodeOption[]
-  // (trước đang bị gọi nhầm, anh sửa lại đúng)
-
+  /**
+   * Meta country / MCC giữ nguyên
+   */
   async getCountryOptions(): Promise<CardCountryOption[]> {
-    const { data } = await api.get<CardCountryOption[]>("/api/meta/merchant-categories");
+    const { data } = await api.get<CardCountryOption[]>("/api/meta/countries");
     return data;
   },
 
   async getMccCodeOptions(): Promise<MccCodeOption[]> {
-    const { data } = await api.get<MccCodeOption[]>(
-      "/api/meta/countries"
-    );
+    const { data } = await api.get<MccCodeOption[]>("/api/meta/mcc-codes");
     return data;
   },
 };

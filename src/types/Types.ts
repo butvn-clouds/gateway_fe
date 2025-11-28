@@ -312,11 +312,6 @@ export interface Merchant {
 }
 
 export interface MerchantSearchResponse {
-  // BE trả về:
-  // {
-  //   "items": [...],
-  //   "metadata": { "nextCursor": "...", "count": ... }
-  // }
   items: Merchant[];
   metadata: {
     nextCursor?: string | null;
@@ -324,17 +319,70 @@ export interface MerchantSearchResponse {
   };
 }
 
-// ======================== CARD ========================
+// ======================== CARD – DTO (match CardDTO bên BE) ========================
+
+export type CardRestrictionMode =
+  | "allow"
+  | "deny"
+  | "default"
+  | "allowlist"
+  | "denylist";
+
+// ----- Spending constraint DTO (server response) -----
+
+export interface CardCountryRuleDTO {
+  countries?: string[] | null;              // ISO2
+  restriction?: string | null;              // allowlist / denylist
+}
+
+export interface CardMerchantCategoryCodeRuleDTO {
+  merchantCategoryCodes?: string[] | null;  // MCC
+  restriction?: string | null;              // allowlist / denylist
+}
+
+export interface CardMerchantCategoryRuleDTO {
+  merchantCategoryIds?: number[] | null;    // local DB id
+  restriction?: string | null;              // allowlist / denylist
+}
+
+export interface CardMerchantRuleDTO {
+  merchants?: string[] | null;              // merchant keys từ Slash
+  restriction?: string | null;              // allowlist / denylist
+}
+
+export interface CardUtilizationLimitDTO {
+  amountCents?: number | null;
+  preset?: string | null;        // daily / weekly / ...
+  startDate?: string | null;     // yyyy-MM-dd
+  timezone?: string | null;      // Asia/Ho_Chi_Minh
+}
+
+export interface CardTransactionSizeLimitDTO {
+  minAmountCents?: number | null;
+  maxAmountCents?: number | null;
+}
+
+export interface CardSpendingRuleDTO {
+  utilizationLimit?: CardUtilizationLimitDTO | null;
+  utilizationLimitV2?: CardUtilizationLimitDTO[] | null;
+  transactionSizeLimit?: CardTransactionSizeLimitDTO | null;
+}
+
+export interface CardSpendingConstraintDTO {
+  countryRule?: CardCountryRuleDTO | null;
+  merchantCategoryCodeRule?: CardMerchantCategoryCodeRuleDTO | null;
+  merchantCategoryRule?: CardMerchantCategoryRuleDTO | null;
+  merchantRule?: CardMerchantRuleDTO | null;
+  spendingRule?: CardSpendingRuleDTO | null;
+}
+
+// ----- Card DTO chính -----
 
 export interface Card {
+  merchantCategories(merchantCategories: any, merchantCategoryLabelMap: Map<string, string>): import("react").ReactNode;
+  merchantNamesAllow: any;
   id: number;
   slashId: string;
-
-  // debug / filter theo Slash
-  slashAccountId?: string | null;
-  slashVirtualAccountId?: string | null;
-  slashCardGroupId?: string | null;
-  cardProductId?: string | null;
 
   accountId: number | null;
   accountName?: string | null;
@@ -342,36 +390,36 @@ export interface Card {
   virtualAccountId: number | null;
   virtualAccountName?: string | null;
 
-  cardGroupId: number | null;
-  cardGroupName?: string | null;
+  slashAccountId?: string | null;
+  slashVirtualAccountId?: string | null;
+
+  // cardGroupId bên BE hiện đang để String (id Slash group),
+  // nếu sau này map local id thì mình thêm field khác.
+  cardGroupId?: string | null;
+  cardProductId?: string | null;
 
   name: string;
   last4?: string | null;
-  status?: string | null; // "active" | "inactive" | "closed" | ...
+  status?: string | null;
 
-  isPhysical?: boolean | null;
-  isSingleUse?: boolean | null;
-  pan?: string | null;
-  cvv?: string | null;
-  isPhysicalCard?: boolean | null;
+  physical?: boolean | null;
   singleUse?: boolean | null;
-  expiryMonth?: string | null; // "01".."12"
-  expiryYear?: string | null; // "2028"...
 
-  // summary limit lấy từ spendingConstraint
-  dailyLimitCents?: number | null;
-  minTransactionCents?: number | null;
-  maxTransactionCents?: number | null;
-
-  // từ spendingConstraintJson (countryRule / mccRule / merchantRule ...)
-  countriesAllow?: string[] | null; // ISO2
-  mccCodesAllow?: string[] | null; // MCC
-  merchantIds?: string[] | null; // merchant id (Slash)
-  merchantCategories?: string[] | null; // merchant_category_xxx
-  merchantNamesAllow?: string[] | null; // optional – nếu FE muốn map thêm
+  expiryMonth?: string | null;
+  expiryYear?: string | null;
 
   createdAt?: string | null; // ISO
-  updatedAt?: string | null; // ISO
+  // nếu BE có updatedAt thì add thêm ở đây
+  // updatedAt?: string | null;
+
+  // nguyên khối spendingConstraint đúng kiểu BE trả về
+  spendingConstraint?: CardSpendingConstraintDTO | null;
+
+  // Các field dưới đây FE có thể tự compute (không nhất thiết server trả):
+  // countriesAllow?: string[] | null;
+  // mccCodesAllow?: string[] | null;
+  // merchantKeys?: string[] | null;
+  // merchantCategoryIds?: number[] | null;
 }
 
 export interface CardPage {
@@ -382,128 +430,109 @@ export interface CardPage {
   totalPages: number;
 }
 
-// ======================== CARD SPENDING CONSTRAINT ========================
+// ======================== CARD – PARAM GỬI LÊN BE ========================
+// Match đúng CardCreateRequest / CardUpdateRequest bên Java
 
-export type CardRestrictionMode =
-  | "allow"
-  | "deny"
-  | "default"
-  | "allowlist"
-  | "denylist";
-
-export interface CardAmount {
-  amountCents?: number | null;
-  currencyCode?: string | null; // ví dụ "USD"
-}
-
-export interface CardUtilizationLimit {
-  rollingWindow?: string | null; // "daily", "weekly", ...
-  limitAmount?: CardAmount | null;
-}
-
-export interface CardTransactionSizeLimit {
-  minimum?: CardAmount | null;
-  maximum?: CardAmount | null;
-}
-
-export interface CardCountryRuleParam {
-  mode?: CardRestrictionMode | null;
-  countries?: string[] | null; // ISO2
-}
-
-export interface CardMerchantCategoryCodeRuleParam {
-  mode?: CardRestrictionMode | null;
-  merchantCategoryCodes?: string[] | null; // MCC
-}
-
-export interface CardMerchantCategoryRuleParam {
-  mode?: CardRestrictionMode | null;
-  merchantCategories?: string[] | null; // "merchant_category_xxx"
-}
-
-export interface CardMerchantRuleParam {
-  mode?: CardRestrictionMode | null;
-  merchants?: string[] | null; // merchant ids
-}
-
-export interface CardSpendingRuleParam {
-  mode?: CardRestrictionMode | null;
-
-  utilizationLimit?: CardUtilizationLimit | null;
-  utilizationLimitV2?: CardUtilizationLimit[] | null;
-
-  transactionSizeLimit?: CardTransactionSizeLimit | null;
-}
-
-// mirror CardSpendingConstraintDTO bên BE
-export interface CardSpendingConstraintParam {
-  countryRule?: CardCountryRuleParam | null;
-  merchantCategoryCodeRule?: CardMerchantCategoryCodeRuleParam | null;
-  merchantCategoryRule?: CardMerchantCategoryRuleParam | null;
-  merchantRule?: CardMerchantRuleParam | null;
-  spendingRule?: CardSpendingRuleParam | null;
-}
-
-// ======================== CARD CREATE / UPDATE PARAM ========================
-
-// FE gửi local id (BE tự lookup ra slashId từ VA/CardGroup)
 export interface ApiCreateCardParam {
-  // local account id (để BE tìm Account & apiKey)
+  // BE dùng path /api/accounts/{accountId}, nên accountId có thể lấy từ URL.
+  // Em vẫn giữ ở đây để FE tiện xài cho context.
   accountId: number;
 
-  // local DB ids
   virtualAccountId: number;
-  cardGroupId?: number | null;
 
   name: string;
-
   cardProductId?: string | null;
-  isPhysical?: boolean | null;
-  isSingleUse?: boolean | null;
+  physical?: boolean | null;
+  singleUse?: boolean | null;
 
-  spendingConstraint?: CardSpendingConstraintParam | null;
+  // countryRule
+  countryAllow?: string[] | null;                // ISO2
+  countryRestriction?: CardRestrictionMode | null;
 
-  // tuỳ em, BE map vào user_data_json
+  // mccRule
+  mccAllow?: string[] | null;                    // MCC
+  mccRestriction?: CardRestrictionMode | null;
+
+  // merchantCategoryRule (DB id)
+  merchantCategoryIds?: number[] | null;
+  merchantCategoryRestriction?: CardRestrictionMode | null;
+
+  // merchantRule (Slash)
+  merchantKeys?: string[] | null;                // merchant ids từ Slash
+  merchantRestriction?: CardRestrictionMode | null;
+
+  // spendingRule – utilization limit
+  utilizationLimitAmountCents?: number | null;
+  utilizationPreset?: string | null;
+  utilizationStartDate?: string | null;          // yyyy-MM-dd
+  utilizationTimezone?: string | null;           // Asia/Ho_Chi_Minh
+
+  // spendingRule – transaction size limit
+  txMinAmountCents?: number | null;
+  txMaxAmountCents?: number | null;
+
+  // optional custom data, nếu BE có userDataJson thì add thêm field userData ở request BE
   userData?: Record<string, any> | null;
 }
 
 export interface ApiUpdateCardParam {
   name?: string;
-  cardProductId?: string | null;
-  isPhysical?: boolean | null;
-  isSingleUse?: boolean | null;
 
-  // nếu cần chuyển card sang VA / CardGroup khác (local DB id)
-  virtualAccountId?: number | null;
-  cardGroupId?: number | null;
+  // status: active | paused | inactive | closed
+  status?: string | null;
 
-  spendingConstraint?: CardSpendingConstraintParam | null;
+  physical?: boolean | null;
+  singleUse?: boolean | null;
+
+  // countryRule
+  countryAllow?: string[] | null;
+  countryRestriction?: CardRestrictionMode | null;
+
+  // mccRule
+  mccAllow?: string[] | null;
+  mccRestriction?: CardRestrictionMode | null;
+
+  // merchantCategoryRule
+  merchantCategoryIds?: number[] | null;
+  merchantCategoryRestriction?: CardRestrictionMode | null;
+
+  // merchantRule
+  merchantKeys?: string[] | null;
+  merchantRestriction?: CardRestrictionMode | null;
+
+  // spendingRule – utilization limit
+  utilizationLimitAmountCents?: number | null;
+  utilizationPreset?: string | null;
+  utilizationStartDate?: string | null;
+  utilizationTimezone?: string | null;
+
+  // spendingRule – transaction size limit
+  txMinAmountCents?: number | null;
+  txMaxAmountCents?: number | null;
 
   userData?: Record<string, any> | null;
 }
 
-// ======================== CARD META / OPTIONS ========================
+// ======================== CARD META ========================
 
 export interface CardCountryOption {
+  id: number;
   code: string; // ISO2
   name: string;
-  region?: string | null; // Asia, EU, NA...
+  region?: string; // Asia, EU, NA…
 }
 
 export interface MccCodeOption {
-  code: string; // MCC code
+  id: number;
+  code: string; // "5812", "5411"...
   name: string;
 }
-
-// ======================== CARD UTILIZATION ========================
 
 export interface CardUtilization {
   cardId: number;
   slashId: string;
-
   limitAmountCents: number | null;
   availableBalanceCents: number | null;
   spendAmountCents: number | null;
-
   nextResetDate?: string | null; // ISO
 }
