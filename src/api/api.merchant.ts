@@ -1,4 +1,3 @@
-// src/api/api.merchant.ts
 import api from "../config/api.config";
 import {
   MerchantCategory,

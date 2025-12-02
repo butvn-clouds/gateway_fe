@@ -1,10 +1,10 @@
-// src/api/api.virtualaccout.ts
 import api from "../config/api.config";
 import {
   VirtualAccount,
   VirtualAccountPage,
   ApiCreateVirtualAccountParam,
   ApiUpdateVirtualAccountParam,
+  ApiUpdateVisibilityParam,
 } from "../types/Types";
 
 export const virtualAccountApi = {
@@ -35,15 +35,10 @@ export const virtualAccountApi = {
         params: {
           page: safePage,
           size: safeSize,
-          // BE hiện tại chưa dùng search, nhưng gửi thêm cũng không sao
           ...(search ? { search } : {}),
         },
       }
     );
-
-    // debug tạm:
-    console.log("VA page response", res.data);
-
     return res.data;
   },
 
@@ -78,5 +73,22 @@ export const virtualAccountApi = {
 
   async deleteVirtualAccount(id: number): Promise<void> {
     await api.delete(`/api/virtual-accounts/${id}`);
+  },
+  async setHiddenVirtualAccount(
+    id: number,
+    hidden: boolean
+  ): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden };
+    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
+  },
+
+  async hideVirtualAccount(id: number): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden: true };
+    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
+  },
+
+  async unhideVirtualAccount(id: number): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden: false };
+    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
   },
 };

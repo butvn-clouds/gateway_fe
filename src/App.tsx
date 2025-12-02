@@ -32,6 +32,7 @@ export default function App() {
             <Route path="/card-group" element={<CardGroupPage />} />
             <Route path="/merchant" element={<MerchantPage />} />
             <Route path="/card" element={<CardPage />} />
+            {/* <Route path="/" element={<TransactionManager />} /> */}
           </Route>
         </Route>
 

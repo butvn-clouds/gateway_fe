@@ -319,8 +319,6 @@ export interface MerchantSearchResponse {
   };
 }
 
-// ======================== CARD – DTO (match CardDTO bên BE) ========================
-
 export type CardRestrictionMode =
   | "allow"
   | "deny"
@@ -328,61 +326,87 @@ export type CardRestrictionMode =
   | "allowlist"
   | "denylist";
 
-// ----- Spending constraint DTO (server response) -----
-
-export interface CardCountryRuleDTO {
-  countries?: string[] | null;              // ISO2
-  restriction?: string | null;              // allowlist / denylist
-}
-
-export interface CardMerchantCategoryCodeRuleDTO {
-  merchantCategoryCodes?: string[] | null;  // MCC
-  restriction?: string | null;              // allowlist / denylist
-}
-
-export interface CardMerchantCategoryRuleDTO {
-  merchantCategoryIds?: number[] | null;    // local DB id
-  restriction?: string | null;              // allowlist / denylist
-}
-
-export interface CardMerchantRuleDTO {
-  merchants?: string[] | null;              // merchant keys từ Slash
-  restriction?: string | null;              // allowlist / denylist
-}
-
-export interface CardUtilizationLimitDTO {
+export interface CardAmount {
   amountCents?: number | null;
-  preset?: string | null;        // daily / weekly / ...
-  startDate?: string | null;     // yyyy-MM-dd
-  timezone?: string | null;      // Asia/Ho_Chi_Minh
+  currency?: string | null;
 }
 
-export interface CardTransactionSizeLimitDTO {
-  minAmountCents?: number | null;
-  maxAmountCents?: number | null;
+// ======================== CARD – SPENDING CONSTRAINT ========================
+
+export interface CardCountryRuleParam {
+  countries?: string[] | null; // ISO2
+  restriction?: CardRestrictionMode | null; // allowlist / denylist / ...
 }
 
-export interface CardSpendingRuleDTO {
-  utilizationLimit?: CardUtilizationLimitDTO | null;
-  utilizationLimitV2?: CardUtilizationLimitDTO[] | null;
-  transactionSizeLimit?: CardTransactionSizeLimitDTO | null;
+export interface CardMerchantCategoryCodeRuleParam {
+  merchantCategoryCodes?: string[] | null; // MCC
+  restriction?: CardRestrictionMode | null;
 }
 
-export interface CardSpendingConstraintDTO {
-  countryRule?: CardCountryRuleDTO | null;
-  merchantCategoryCodeRule?: CardMerchantCategoryCodeRuleDTO | null;
-  merchantCategoryRule?: CardMerchantCategoryRuleDTO | null;
-  merchantRule?: CardMerchantRuleDTO | null;
-  spendingRule?: CardSpendingRuleDTO | null;
+export interface CardMerchantCategoryRuleParam {
+  merchantCategories?: string[] | null; // Slash merchant_category_xxx
+  restriction?: CardRestrictionMode | null;
 }
 
-// ----- Card DTO chính -----
+export interface CardMerchantRuleParam {
+  merchants?: string[] | null; // merchant IDs / keys từ Slash
+  restriction?: CardRestrictionMode | null;
+}
+
+export interface CardUtilizationLimitParam {
+  timezone?: string | null; // "Asia/Ho_Chi_Minh"
+  limitAmount?: CardAmount | null;
+  preset?: string | null; // "daily" / "weekly" / ...
+  startDate?: string | null; // "2025-10-01"
+}
+
+export interface CardTransactionSizeLimitParam {
+  minimum?: CardAmount | null;
+  maximum?: CardAmount | null;
+}
+
+/**
+ * Dùng chung cho:
+ * - BE: CardSpendingConstraintDTO (đã flatten các rule)
+ * - Slash JSON sau khi BE map
+ * - FE: gửi lên khi create / update card
+ *
+ * Lưu ý: tất cả field đều optional để code kiểu
+ * `const payload: CardSpendingConstraintParam = {};`
+ * không bị lỗi TypeScript.
+ */
+export interface CardSpendingConstraintParam {
+  // Transaction size / utilization
+  utilizationLimit?: CardUtilizationLimitParam | null;
+  transactionSizeLimit?: CardTransactionSizeLimitParam | null;
+
+  // Country rule (flatten)
+  countries?: string[] | null;
+  countryRestriction?: CardRestrictionMode | null;
+
+  // MCC codes rule (flatten)
+  merchantCategoryCodes?: string[] | null;
+  merchantCategoryCodeRestriction?: CardRestrictionMode | null;
+
+  // Merchant categories rule (flatten) – giá trị là slashId "merchant_category_xxx"
+  merchantCategories?: string[] | null;
+  merchantCategoryRestriction?: CardRestrictionMode | null;
+
+  // Merchants rule (flatten)
+  merchants?: string[] | null;
+  merchantRestriction?: CardRestrictionMode | null;
+}
+
+// ======================== CARD – DTO CHÍNH (match CardDTO từ DB) ========================
 
 export interface Card {
-  merchantCategories(merchantCategories: any, merchantCategoryLabelMap: Map<string, string>): import("react").ReactNode;
-  merchantNamesAllow: any;
   id: number;
   slashId: string;
+
+  slashAccountId?: string | null;
+  slashVirtualAccountId?: string | null;
+  slashCardGroupId?: string | null;
+  cardProductId?: string | null;
 
   accountId: number | null;
   accountName?: string | null;
@@ -390,36 +414,32 @@ export interface Card {
   virtualAccountId: number | null;
   virtualAccountName?: string | null;
 
-  slashAccountId?: string | null;
-  slashVirtualAccountId?: string | null;
-
-  // cardGroupId bên BE hiện đang để String (id Slash group),
-  // nếu sau này map local id thì mình thêm field khác.
-  cardGroupId?: string | null;
-  cardProductId?: string | null;
+  cardGroupId: number | null;
+  cardGroupName?: string | null;
 
   name: string;
   last4?: string | null;
   status?: string | null;
 
-  physical?: boolean | null;
-  singleUse?: boolean | null;
+  isPhysical?: boolean | null;
+  isSingleUse?: boolean | null;
 
   expiryMonth?: string | null;
   expiryYear?: string | null;
 
-  createdAt?: string | null; // ISO
-  // nếu BE có updatedAt thì add thêm ở đây
-  // updatedAt?: string | null;
+  dailyLimitCents?: number | null;
+  minTransactionCents?: number | null;
+  maxTransactionCents?: number | null;
 
-  // nguyên khối spendingConstraint đúng kiểu BE trả về
-  spendingConstraint?: CardSpendingConstraintDTO | null;
+  // các field extracted từ spendingConstraintJson + userDataJson
+  countriesAllow?: string[] | null;       // ISO2
+  mccCodesAllow?: string[] | null;        // MCC
+  merchantIds?: string[] | null;          // merchants[]
+  merchantCategories?: string[] | null;   // merchantCategories[]
+  merchantNamesAllow?: string[] | null;   // từ userData.merchantNamesAllow
 
-  // Các field dưới đây FE có thể tự compute (không nhất thiết server trả):
-  // countriesAllow?: string[] | null;
-  // mccCodesAllow?: string[] | null;
-  // merchantKeys?: string[] | null;
-  // merchantCategoryIds?: number[] | null;
+  createdAt?: string | null;  // ISO
+  updatedAt?: string | null;  // ISO
 }
 
 export interface CardPage {
@@ -430,90 +450,57 @@ export interface CardPage {
   totalPages: number;
 }
 
-// ======================== CARD – PARAM GỬI LÊN BE ========================
-// Match đúng CardCreateRequest / CardUpdateRequest bên Java
+export interface SlashCardDetail {
+  id: string;
+  accountId?: string | null;
+  virtualAccountId?: string | null;
+  last4?: string | null;
+  name?: string | null;
+  expiryMonth?: string | null;
+  expiryYear?: string | null;
+  status?: string | null;
+  isPhysical?: boolean | null;
+  isSingleUse?: boolean | null;
+  pan?: string | null;                    // chỉ từ Vault, không lưu DB
+  cvv?: string | null;                    // chỉ từ Vault, không lưu DB
+  cardGroupId?: string | null;
+  createdAt?: string | null;              // ISO
+  spendingConstraint?: CardSpendingConstraintParam | null;
+  userData?: any;
+  cardProductId?: string | null;
+}
 
 export interface ApiCreateCardParam {
-  // BE dùng path /api/accounts/{accountId}, nên accountId có thể lấy từ URL.
-  // Em vẫn giữ ở đây để FE tiện xài cho context.
-  accountId: number;
-
+  accountId: number;               // dùng để BE lấy apiKey
   virtualAccountId: number;
+  cardGroupId?: number | null;
 
   name: string;
   cardProductId?: string | null;
-  physical?: boolean | null;
-  singleUse?: boolean | null;
 
-  // countryRule
-  countryAllow?: string[] | null;                // ISO2
-  countryRestriction?: CardRestrictionMode | null;
+  // type trong Slash: "virtual" | "physical"
+  type?: "virtual" | "physical" | string;
 
-  // mccRule
-  mccAllow?: string[] | null;                    // MCC
-  mccRestriction?: CardRestrictionMode | null;
-
-  // merchantCategoryRule (DB id)
-  merchantCategoryIds?: number[] | null;
-  merchantCategoryRestriction?: CardRestrictionMode | null;
-
-  // merchantRule (Slash)
-  merchantKeys?: string[] | null;                // merchant ids từ Slash
-  merchantRestriction?: CardRestrictionMode | null;
-
-  // spendingRule – utilization limit
-  utilizationLimitAmountCents?: number | null;
-  utilizationPreset?: string | null;
-  utilizationStartDate?: string | null;          // yyyy-MM-dd
-  utilizationTimezone?: string | null;           // Asia/Ho_Chi_Minh
-
-  // spendingRule – transaction size limit
-  txMinAmountCents?: number | null;
-  txMaxAmountCents?: number | null;
-
-  // optional custom data, nếu BE có userDataJson thì add thêm field userData ở request BE
+  spendingConstraint?: CardSpendingConstraintParam | null;
   userData?: Record<string, any> | null;
 }
 
+/**
+ * FE gửi body này vào PATCH /api/cards/{id}
+ * BE map sang CardUpdateRequest rồi gọi Slash update-card.
+ */
 export interface ApiUpdateCardParam {
   name?: string;
+  cardGroupId?: number | null;
 
-  // status: active | paused | inactive | closed
+  // status: active / paused / inactive / closed
   status?: string | null;
 
-  physical?: boolean | null;
-  singleUse?: boolean | null;
-
-  // countryRule
-  countryAllow?: string[] | null;
-  countryRestriction?: CardRestrictionMode | null;
-
-  // mccRule
-  mccAllow?: string[] | null;
-  mccRestriction?: CardRestrictionMode | null;
-
-  // merchantCategoryRule
-  merchantCategoryIds?: number[] | null;
-  merchantCategoryRestriction?: CardRestrictionMode | null;
-
-  // merchantRule
-  merchantKeys?: string[] | null;
-  merchantRestriction?: CardRestrictionMode | null;
-
-  // spendingRule – utilization limit
-  utilizationLimitAmountCents?: number | null;
-  utilizationPreset?: string | null;
-  utilizationStartDate?: string | null;
-  utilizationTimezone?: string | null;
-
-  // spendingRule – transaction size limit
-  txMinAmountCents?: number | null;
-  txMaxAmountCents?: number | null;
-
+  spendingConstraint?: CardSpendingConstraintParam | null;
   userData?: Record<string, any> | null;
 }
 
-// ======================== CARD META ========================
+// ======================== CARD META / UTILIZATION / PRODUCTS / MODIFIERS ========================
 
 export interface CardCountryOption {
   id: number;
@@ -526,6 +513,8 @@ export interface MccCodeOption {
   id: number;
   code: string; // "5812", "5411"...
   name: string;
+  // cho UI hiển thị {code} – {description}
+  description?: string;
 }
 
 export interface CardUtilization {
@@ -535,4 +524,71 @@ export interface CardUtilization {
   availableBalanceCents: number | null;
   spendAmountCents: number | null;
   nextResetDate?: string | null; // ISO
+}
+
+export interface CardProduct {
+  id: string;
+  prefix?: string | null;
+  status?: string | null; // "active", ...
+}
+
+export interface CardProductListResponse {
+  items: CardProduct[];
+  metadata: {
+    nextCursor?: string | null;
+    count?: number | null;
+  };
+}
+
+export interface CardModifier {
+  name: string;
+  value: boolean | string | number | null;
+}
+
+export interface CardModifiersResponse {
+  modifiers: CardModifier[];
+}
+
+// ======================== DTO META COUNTRY / MCC ========================
+
+export interface CountryOptionDTO {
+  id: number;
+  code: string;
+  name: string;
+}
+
+export interface MccCodeOptionDTO {
+  id: number;
+  code: string;
+  name: string;
+}
+
+// ======================== HIDDEN ITEMS (VA & CARD GROUP) ========================
+
+export type HiddenItemType = "VIRTUAL_ACCOUNT" | "CARD_GROUP";
+
+export interface HiddenItem {
+  id: number;
+  itemType: HiddenItemType;
+  itemId: number;
+  createdAt: string; // ISO
+}
+
+/**
+ * Body dùng cho PATCH:
+ * - PATCH /api/hidden/virtual-accounts/{id}
+ * - PATCH /api/hidden/card-groups/{id}
+ */
+export interface ApiUpdateVisibilityParam {
+  hidden: boolean;
+}
+
+/**
+ * Nếu sau này BE trả về list hidden cho user hiện tại (optional):
+ * - virtualAccountIds: list VA id bị ẩn
+ * - cardGroupIds: list CardGroup id bị ẩn
+ */
+export interface HiddenState {
+  virtualAccountIds: number[];
+  cardGroupIds: number[];
 }

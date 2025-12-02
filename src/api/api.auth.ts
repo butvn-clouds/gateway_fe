@@ -8,21 +8,17 @@ import {
 } from "../types/Types";
 import api from "../config/api.config";
 
-// alias cho type Account từ trong user
 type AccountType = ApiLoginResponse["user"]["accounts"][number];
 
 export const AuthLogin = async (
   data: ApiLoginParam
 ): Promise<ApiLoginResponse> => {
   const res = await api.post<ApiLoginResponse>("/api/auth/login", data);
-
-  // lưu token
   localStorage.setItem("token", res.data.token);
 
   return res.data;
 };
 
-// check token + lấy user + activeAccount (nếu có)
 export const AuthCheck = async (): Promise<{
   user: ApiLoginResponse["user"];
   token: string;
@@ -42,7 +38,6 @@ export const AuthCheck = async (): Promise<{
   return res.data;
 };
 
-// chọn account đang active cho user
 export const AuthSetActiveAccount = async (
   accountId: number
 ): Promise<{
@@ -84,7 +79,6 @@ export const AuthLogout = async (): Promise<{ message: string }> => {
       );
     }
   } catch {
-    // ignore error, vẫn cho logout local
   }
 
   localStorage.removeItem("token");
@@ -113,7 +107,6 @@ export const AuthGetUsers = async (
   return res.data;
 };
 
-// BE đang trả { message, user }, nên type nên match
 export const AuthUpdateUser = async (
   id: number,
   data: ApiUpdateUserParam

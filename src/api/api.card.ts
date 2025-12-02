@@ -6,13 +6,16 @@ import {
   CardPage,
   CardCountryOption,
   MccCodeOption,
+  CardSpendingConstraintParam,
   CardUtilization,
+  SlashCardDetail,
+  CardModifiersResponse,
+  CardProductListResponse,
 } from "../types/Types";
 
 export interface GetPagedCardsParams {
   accountId: number;
   virtualAccountId?: number | null;
-  // cardGroupId giờ BE chưa filter theo local id, có thể map sau
   cardGroupId?: number | null;
   page: number;
   size: number;
@@ -22,13 +25,18 @@ export interface GetPagedCardsParams {
   dir?: "asc" | "desc";
 }
 
+/**
+ * Dùng cho /api/cards-visible (đã lọc ẩn theo VA / Card Group)
+ * Về cơ bản giống GetPagedCardsParams, nên reuse luôn type cũ.
+ */
+export type GetPagedVisibleCardsParams = GetPagedCardsParams;
+
 export const cardApi = {
-  /**
-   * GET /api/accounts/{accountId}/cards
-   * BE: CardController.listCards(accountId, virtualAccountId, page, size, ...)
-   */
+  // ==================== LIST GỐC (KHÔNG ÁP DỤNG ẨN) ====================
+
   async getPagedCards(params: GetPagedCardsParams): Promise<CardPage> {
     const query: any = {
+      accountId: params.accountId,
       page: params.page,
       size: params.size,
     };
@@ -36,7 +44,9 @@ export const cardApi = {
     if (params.virtualAccountId != null) {
       query.virtualAccountId = params.virtualAccountId;
     }
-    // nếu sau này BE support search/status/sort thì gửi, BE ko dùng thì cũng không sao
+    if (params.cardGroupId != null) {
+      query.cardGroupId = params.cardGroupId;
+    }
     if (params.search && params.search.trim()) {
       query.search = params.search.trim();
     }
@@ -50,111 +60,219 @@ export const cardApi = {
       query.dir = params.dir.trim();
     }
 
-    const { data } = await api.get<CardPage>(
-      `/api/accounts/${params.accountId}/cards`,
-      { params: query }
+    const { data } = await api.get<CardPage>("/api/cards", { params: query });
+    return data;
+  },
+
+  // ==================== LIST ĐÃ LỌC ẨN (VISIBLE) ====================
+
+  /**
+   * Lấy danh sách card đã áp dụng rule ẩn theo VA / CardGroup của user hiện tại.
+   * BE: GET /api/cards-visible
+   */
+  async getPagedCardsVisible(
+    params: GetPagedVisibleCardsParams
+  ): Promise<CardPage> {
+    const query: any = {
+      accountId: params.accountId,
+      page: params.page,
+      size: params.size,
+    };
+
+    if (params.virtualAccountId != null) {
+      query.virtualAccountId = params.virtualAccountId;
+    }
+    if (params.cardGroupId != null) {
+      query.cardGroupId = params.cardGroupId;
+    }
+    if (params.search && params.search.trim()) {
+      query.search = params.search.trim();
+    }
+    if (params.status && params.status.trim()) {
+      query.status = params.status.trim();
+    }
+    if (params.sort && params.sort.trim()) {
+      query.sort = params.sort.trim();
+    } else {
+      query.sort = "createdAt";
+    }
+    if (params.dir && params.dir.trim()) {
+      query.dir = params.dir.trim();
+    } else {
+      query.dir = "desc";
+    }
+
+    const { data } = await api.get<CardPage>("/api/cards-visible", {
+      params: query,
+    });
+    return data;
+  },
+
+  // ==================== SYNC / CRUD ====================
+
+  async syncFromSlash(
+    accountId: number
+  ): Promise<{ message: string; count: number }> {
+    const { data } = await api.post<{ message: string; count: number }>(
+      `/api/cards/sync/${accountId}`,
+      null
     );
     return data;
   },
 
-  /**
-   * POST /api/accounts/{accountId}/cards/sync/{slashCardId}
-   * match CardController.syncCardFromSlash
-   */
-  syncFromSlash(accountId: number) {
-    return api.get(`/api/accounts/${accountId}/cards/sync`);
-  },
-
-  syncOneFromSlash(accountId: number, slashCardId: string) {
-    return api.get(
-      `/api/accounts/${accountId}/cards/sync/${encodeURIComponent(slashCardId)}`
-    );
-  },
-  /**
-   * POST /api/accounts/{accountId}/cards
-   * Body map thẳng sang CardCreateRequest (flatten fields)
-   */
   async create(params: ApiCreateCardParam): Promise<Card> {
-    const { accountId, ...body } = params;
+    const payload: ApiCreateCardParam = {
+      ...params,
+      type: params.type ?? "virtual",
+    };
 
-    // Nếu BE còn field extra (accountId trong body) thì có thể giữ lại:
-    // const payload = { ...body, accountId };
-    const payload = body;
+    const { data } = await api.post<Card>("/api/cards", payload);
+    return data;
+  },
 
-    const { data } = await api.post<Card>(
-      `/api/accounts/${accountId}/cards`,
-      payload
+  async update(id: number, params: ApiUpdateCardParam): Promise<Card> {
+    const { data } = await api.put<Card>(`/api/cards/${id}`, params);
+    return data;
+  },
+
+  async getById(id: number): Promise<Card> {
+    const { data } = await api.get<Card>(`/api/cards/${id}`);
+    return data;
+  },
+
+  // ==================== DETAIL / VAULT (GỐC) ====================
+
+  async getSlashDetail(
+    id: number,
+    opts?: { includePan?: boolean; includeCvv?: boolean }
+  ): Promise<SlashCardDetail> {
+    const params: any = {};
+    if (opts?.includePan !== undefined) {
+      params.includePan = opts.includePan;
+    }
+    if (opts?.includeCvv !== undefined) {
+      params.includeCvv = opts.includeCvv;
+    }
+
+    const hasParams = Object.keys(params).length > 0;
+
+    const { data } = await api.get<SlashCardDetail>(
+      `/api/cards/${id}/detail`,
+      hasParams ? { params } : undefined
     );
     return data;
   },
 
-  /**
-   * PUT /api/accounts/{accountId}/cards/{cardId}
-   * match CardController.updateCard
-   */
-  async update(
-    accountId: number,
-    cardId: number,
-    params: ApiUpdateCardParam
-  ): Promise<Card> {
-    const { data } = await api.put<Card>(
-      `/api/accounts/${accountId}/cards/${cardId}`,
-      params
-    );
-    return data;
-  },
-
-  /**
-   * GET /api/accounts/{accountId}/cards/{cardId}
-   * match CardController.getCard
-   */
-  async getById(accountId: number, cardId: number): Promise<Card> {
-    const { data } = await api.get<Card>(
-      `/api/accounts/${accountId}/cards/${cardId}`
-    );
-    return data;
-  },
-
-  /**
-   * GET /api/accounts/{accountId}/cards/{cardId}/detail
-   * match CardController.getCardDetailFromSlash
-   * includePan/includeCvv để BE truyền xuống Slash vault
-   */
-  async getVaultCard(
-    accountId: number,
-    cardId: number,
-    includePan: boolean = true,
-    includeCvv: boolean = true
-  ): Promise<any> {
-    const { data } = await api.get<any>(
-      `/api/accounts/${accountId}/cards/${cardId}/detail`,
+  async getSlashDetailWithSensitive(
+    id: number,
+    includePan: boolean,
+    includeCvv: boolean
+  ): Promise<SlashCardDetail> {
+    const { data } = await api.get<SlashCardDetail>(
+      `/api/cards/${id}/detail`,
       {
-        params: {
-          includePan,
-          includeCvv,
-        },
+        params: { includePan, includeCvv },
       }
     );
     return data;
   },
 
+  // ==================== DETAIL / VAULT (ĐÃ LỌC ẨN) ====================
+
   /**
-   * GET /api/accounts/{accountId}/cards/{cardId}/utilization
-   * Cần mapping 1 endpoint trên BE gọi SlashClient.getCardUtilization
+   * Lấy detail từ endpoint đã check ẩn:
+   * BE: GET /api/cards-visible/{id}/vault
    */
-  async getUtilization(
-    accountId: number,
-    cardId: number
-  ): Promise<CardUtilization> {
-    const { data } = await api.get<CardUtilization>(
-      `/api/accounts/${accountId}/cards/${cardId}/utilization`
+  async getSlashDetailVisible(
+    id: number,
+    opts?: { includePan?: boolean; includeCvv?: boolean }
+  ): Promise<SlashCardDetail> {
+    const params: any = {};
+    if (opts?.includePan !== undefined) {
+      params.includePan = opts.includePan;
+    }
+    if (opts?.includeCvv !== undefined) {
+      params.includeCvv = opts.includeCvv;
+    }
+
+    const hasParams = Object.keys(params).length > 0;
+
+    const { data } = await api.get<SlashCardDetail>(
+      `/api/cards-visible/${id}/vault`,
+      hasParams ? { params } : undefined
     );
     return data;
   },
 
+  // ==================== UTILIZATION (GỐC) ====================
+
+  async getUtilization(id: number): Promise<CardUtilization> {
+    const { data } = await api.get<CardUtilization>(
+      `/api/cards/${id}/utilization`
+    );
+    return data;
+  },
+
+  // ==================== UTILIZATION (ĐÃ LỌC ẨN) ====================
+
   /**
-   * Meta country / MCC giữ nguyên
+   * Lấy utilization từ endpoint đã check ẩn:
+   * BE: GET /api/cards-visible/{id}/utilization
    */
+  async getUtilizationVisible(id: number): Promise<CardUtilization> {
+    const { data } = await api.get<CardUtilization>(
+      `/api/cards-visible/${id}/utilization`
+    );
+    return data;
+  },
+
+  // ==================== SPENDING CONSTRAINT ====================
+
+  async patchSpendingConstraint(
+    id: number,
+    constraint: CardSpendingConstraintParam
+  ): Promise<Card> {
+    const { data } = await api.put<Card>(
+      `/api/cards/${id}/spending-constraint`,
+      constraint
+    );
+    return data;
+  },
+
+  async replaceSpendingConstraint(
+    id: number,
+    constraint: CardSpendingConstraintParam
+  ): Promise<Card> {
+    const { data } = await api.put<Card>(
+      `/api/cards/${id}/spending-constraint`,
+      constraint
+    );
+    return data;
+  },
+
+  // ==================== MODIFIERS ====================
+
+  async getModifiers(id: number): Promise<CardModifiersResponse> {
+    const { data } = await api.get<CardModifiersResponse>(
+      `/api/cards/${id}/modifiers`
+    );
+    return data;
+  },
+
+  async setModifier(
+    id: number,
+    name: string,
+    value: boolean | string | number
+  ): Promise<{ success: boolean }> {
+    const { data } = await api.post<{ success: boolean }>(
+      `/api/cards/${id}/modifiers/${encodeURIComponent(name)}`,
+      { value }
+    );
+    return data;
+  },
+
+  // ==================== META ====================
+
   async getCountryOptions(): Promise<CardCountryOption[]> {
     const { data } = await api.get<CardCountryOption[]>("/api/meta/countries");
     return data;
@@ -162,6 +280,13 @@ export const cardApi = {
 
   async getMccCodeOptions(): Promise<MccCodeOption[]> {
     const { data } = await api.get<MccCodeOption[]>("/api/meta/mcc-codes");
+    return data;
+  },
+
+  async getCardProducts(): Promise<CardProductListResponse> {
+    const { data } = await api.get<CardProductListResponse>(
+      "/api/cards/products"
+    );
     return data;
   },
 };

@@ -14,6 +14,7 @@ import {
   MerchantCategory,
   MerchantSearchResponse,
   VirtualAccount,
+  CardSpendingConstraintParam,
 } from "../../types/Types";
 import { cardApi } from "../../api/api.card";
 import { cardMetaApi } from "../../api/api.cardMeta";
@@ -24,12 +25,19 @@ import { virtualAccountApi } from "../../api/api.virtualaccout";
 interface Props {
   pageSize?: number;
 }
+type CardDetailState = Card & {
+  pan?: string | null;
+  cvv?: string | null;
+  expiryMonth?: string | null;
+  expiryYear?: string | null;
+  isPhysical?: boolean | null;
+  isSingleUse?: boolean | null;
+};
 
 export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const { user, loading: authLoading } = useAuth();
-
-  // ===== AUTH / ACCOUNT =====
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
+  const [syncing, setSyncing] = useState(false);
 
   const activeAccountId: number | null = useMemo(() => {
     if (!accounts || accounts.length === 0) return null;
@@ -44,7 +52,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     [accounts, activeAccountId]
   );
 
-  // ===== META: VA / CARD GROUP =====
   const [vaOptions, setVaOptions] = useState<VirtualAccount[]>([]);
   const [vaLoading, setVaLoading] = useState(false);
 
@@ -81,14 +88,13 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const merchantCategoryLabelMap = useMemo(() => {
     const m = new Map<string, string>();
     merchantCategories.forEach((cat) => {
-      if (cat.slashId) {
-        m.set(cat.slashId, cat.name);
+      if ((cat as any).slashId) {
+        m.set((cat as any).slashId, cat.name);
       }
     });
     return m;
   }, [merchantCategories]);
 
-  // ===== FILTER STATE =====
   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -99,7 +105,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setSelectedGroupId(null);
   }, [activeAccountId]);
 
-  // Load VA list
   useEffect(() => {
     const loadVas = async () => {
       if (!activeAccountId) {
@@ -125,8 +130,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadVas();
   }, [activeAccountId]);
 
-  
-  // Load card groups
   useEffect(() => {
     const loadGroups = async () => {
       if (!activeAccountId) {
@@ -153,7 +156,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadGroups();
   }, [activeAccountId, selectedVaId]);
 
-  // META: countries, mcc, merchant categories
   useEffect(() => {
     const loadMeta = async () => {
       try {
@@ -177,7 +179,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadMeta();
   }, []);
 
-  // ===== CARD LIST =====
   const [cardPage, setCardPage] = useState<CardPage | null>(null);
   const [cardLoading, setCardLoading] = useState(false);
   const [page, setPage] = useState(0);
@@ -227,40 +228,23 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     loadCards(newPage);
   };
 
-  // const handleSync = async () => {
-  //   if (!activeAccountId) return;
-  //   try {
-  //     const res = await cardApi.syncFromSlash(activeAccountId);
-  //     toast.success(`Synced ${res.count} cards from Slash`);
-  //     await loadCards(page);
-  //   } catch (err: any) {
-  //     console.error("sync error:", err?.response?.data || err);
-  //     toast.error(err?.response?.data?.message || "Sync from Slash failed");
-  //   }
-  // };
-  const handleSyncOneCard = async (card: Card) => {
-  if (!activeAccountId) {
-    toast.error("No active account");
-    return;
-  }
+  const handleSync = async () => {
+    if (!activeAccountId) return;
+    setSyncing(true);
 
-  if (!card.slashId) {
-    toast.error("This card does not have a Slash card id yet");
-    return;
-  }
+    try {
+      const res = await cardApi.syncFromSlash(activeAccountId);
+      toast.success(`Synced ${res.count} cards from Slash`);
+      await loadCards(page);
+    } catch (err: any) {
+      console.error("sync error:", err?.response?.data || err);
+      toast.error(err?.response?.data?.message || "Sync from Slash failed");
+      
+    } finally {
+      setSyncing(false);
+    }
+  };
 
-  try {
-    await cardApi.syncOneFromSlash(activeAccountId, card.slashId);
-    toast.success("Card synced from Slash");
-    await loadCards(page);
-  } catch (e: any) {
-    console.error(e);
-    toast.error(e?.response?.data?.message || "Failed to sync card from Slash");
-  }
-};
-
-
-  // ===== MERCHANT SEARCH =====
   const [merchantSearchResult, setMerchantSearchResult] = useState<Merchant[]>(
     []
   );
@@ -328,7 +312,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const toggleStringInArray = (list: string[], value: string): string[] =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
-  // ===== CREATE STATE =====
   const [showCreate, setShowCreate] = useState(false);
   const [createVaId, setCreateVaId] = useState<number | null>(null);
   const [createGroupId, setCreateGroupId] = useState<number | null>(null);
@@ -346,7 +329,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   >([]);
   const [createMerchantNames, setCreateMerchantNames] = useState<string[]>([]);
 
-  // ===== EDIT STATE =====
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [editDailyLimit, setEditDailyLimit] = useState<number | null>(null);
   const [editMinTx, setEditMinTx] = useState<number | null>(null);
@@ -360,15 +342,13 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [editMerchantNames, setEditMerchantNames] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState<string>("");
 
-  // ===== DETAIL / VAULT =====
-  const [detailCard, setDetailCard] = useState<Card | null>(null);
+  const [detailCard, setDetailCard] = useState<CardDetailState | null>(null);
   const [showCvv, setShowCvv] = useState(false);
   const [cvvCheckMode, setCvvCheckMode] = useState(false);
   const [cvvCheckFirst3, setCvvCheckFirst3] = useState("");
   const [cvvCheckLast3, setCvvCheckLast3] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // ===== OPEN CREATE MODAL =====
   const openCreateModal = () => {
     if (!activeAccountId) {
       toast.error("No active account");
@@ -413,7 +393,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setShowCreate(true);
   };
 
-  // ===== BUILD CONSTRAINT PAYLOAD (CREATE / EDIT) =====
   const buildConstraintPayload = (
     dailyLimitUsd: number | null,
     minTxUsd: number | null,
@@ -422,58 +401,89 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     mccCodesAllow: string[],
     merchantIds: string[],
     merchantCategorySlashIds: string[]
-  ): Partial<ApiCreateCardParam> => {
-    const payload: Partial<ApiCreateCardParam> = {};
+  ): CardSpendingConstraintParam | null => {
+    const constraint: CardSpendingConstraintParam = {
+      countryRestriction: false,
+      countries: false
+    };
+    let hasAny = false;
 
-    // Countries (ISO2)
     const isoCountries = (countriesAllow || [])
       .map((c) => c.trim().toUpperCase())
       .filter((c) => /^[A-Z]{2}$/.test(c));
 
     if (isoCountries.length > 0) {
-      payload.countryAllow = isoCountries;
-      payload.countryRestriction = "allowlist";
+      constraint.countryRule = {
+        countries: isoCountries,
+        restriction: "allowlist",
+      };
+      hasAny = true;
     }
 
-    // MCC
     if (mccCodesAllow && mccCodesAllow.length > 0) {
-      payload.mccAllow = mccCodesAllow;
-      payload.mccRestriction = "allowlist";
+      constraint.merchantCategoryCodeRule = {
+        merchantCategoryCodes: mccCodesAllow,
+        restriction: "allowlist",
+      };
+      hasAny = true;
     }
 
-    // Merchants (Slash search result id)
     if (merchantIds && merchantIds.length > 0) {
-      payload.merchantKeys = merchantIds;
-      payload.merchantRestriction = "allowlist";
+      constraint.merchantRule = {
+        merchants: merchantIds,
+        restriction: "allowlist",
+      };
+      hasAny = true;
     }
 
-    // Merchant categories (dùng slashId string luôn)
     if (merchantCategorySlashIds && merchantCategorySlashIds.length > 0) {
-      payload.merchantCategoryIds = merchantCategorySlashIds;
-      payload.merchantCategoryRestriction = "allowlist";
+      constraint.merchantCategoryRule = {
+        merchantCategories: merchantCategorySlashIds,
+        restriction: "allowlist",
+      };
+      hasAny = true;
     }
 
-    // Daily limit
-    if (dailyLimitUsd != null && dailyLimitUsd > 0) {
-      const cents = Math.round(dailyLimitUsd * 100);
-      payload.utilizationLimitAmountCents = cents;
-      payload.utilizationPreset = "daily";
-      payload.utilizationStartDate = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
-      payload.utilizationTimezone = "Asia/Ho_Chi_Minh";
+    const hasUtilization =
+      dailyLimitUsd != null &&
+      !Number.isNaN(dailyLimitUsd) &&
+      dailyLimitUsd > 0;
+    const hasTxMin =
+      minTxUsd != null && !Number.isNaN(minTxUsd) && minTxUsd > 0;
+    const hasTxMax =
+      maxTxUsd != null && !Number.isNaN(maxTxUsd) && maxTxUsd > 0;
+
+    if (hasUtilization || hasTxMin || hasTxMax) {
+      const spendingRule: CardSpendingConstraintParam["spendingRule"] = {};
+
+      if (hasUtilization) {
+        const cents = Math.round(dailyLimitUsd! * 100);
+        spendingRule.utilizationLimit = {
+          timezone: "Asia/Ho_Chi_Minh",
+          limitAmount: { amountCents: cents },
+          preset: "daily",
+          startDate: new Date().toISOString().slice(0, 10),
+        };
+      }
+
+      if (hasTxMin || hasTxMax) {
+        spendingRule.transactionSizeLimit = {
+          minimum: hasTxMin
+            ? { amountCents: Math.round(minTxUsd! * 100) }
+            : undefined,
+          maximum: hasTxMax
+            ? { amountCents: Math.round(maxTxUsd! * 100) }
+            : undefined,
+        };
+      }
+
+      constraint.spendingRule = spendingRule;
+      hasAny = true;
     }
 
-    // Transaction size limit (nếu cần)
-    if (minTxUsd != null && minTxUsd > 0) {
-      payload.txMinAmountCents = Math.round(minTxUsd * 100);
-    }
-    if (maxTxUsd != null && maxTxUsd > 0) {
-      payload.txMaxAmountCents = Math.round(maxTxUsd * 100);
-    }
-
-    return payload;
+    return hasAny ? constraint : null;
   };
 
-  // ===== SUBMIT CREATE =====
   const handleSubmitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAccountId || !createVaId) {
@@ -495,7 +505,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         ? createMerchantNames
         : collectMerchantNames(createMerchantIds);
 
-    const constraintPayload = buildConstraintPayload(
+    const spendingConstraint = buildConstraintPayload(
       createDailyLimit,
       createMinTx,
       createMaxTx,
@@ -510,8 +520,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       virtualAccountId: createVaId,
       cardGroupId: createGroupId ?? undefined,
       name: createName,
-      // cardProductId (nếu có UI chọn thêm thì set ở đây)
-      ...constraintPayload,
+      spendingConstraint: spendingConstraint || undefined,
       userData:
         merchantNames.length > 0
           ? { merchantNamesAllow: merchantNames }
@@ -528,29 +537,37 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
       toast.error(err?.response?.data?.message || "Failed to create card");
     }
   };
-
-  // ===== OPEN EDIT MODAL =====
   const openEditModal = (card: Card) => {
     setEditingCard(card);
 
     setEditDailyLimit(
-      card.dailyLimitCents != null ? card.dailyLimitCents / 100 : null
+      (card as any).dailyLimitCents != null
+        ? (card as any).dailyLimitCents / 100
+        : null
     );
     setEditMinTx(
-      card.minTransactionCents != null ? card.minTransactionCents / 100 : null
+      (card as any).minTransactionCents != null
+        ? (card as any).minTransactionCents / 100
+        : null
     );
     setEditMaxTx(
-      card.maxTransactionCents != null ? card.maxTransactionCents / 100 : null
+      (card as any).maxTransactionCents != null
+        ? (card as any).maxTransactionCents / 100
+        : null
     );
     setEditCountriesAllow(
-      (card.countriesAllow ?? []).map((c: any) => String(c))
+      ((card as any).countriesAllow ?? []).map((c: any) => String(c))
     );
-    setEditMccCodesAllow((card.mccCodesAllow ?? []).map((m: any) => String(m)));
-    setEditMerchantIds((card.merchantIds ?? []).map((id: any) => String(id)));
+    setEditMccCodesAllow(
+      ((card as any).mccCodesAllow ?? []).map((m: any) => String(m))
+    );
+    setEditMerchantIds(
+      ((card as any).merchantIds ?? []).map((id: any) => String(id))
+    );
     setEditMerchantCategories(
-      (card.merchantCategories ?? []).map((id: any) => String(id))
+      ((card as any).merchantCategories ?? []).map((id: any) => String(id))
     );
-    setEditMerchantNames(card.merchantNamesAllow ?? []);
+    setEditMerchantNames((card as any).merchantNamesAllow ?? []);
     setEditStatus(card.status ?? "");
 
     setMerchantSearchQuery("");
@@ -558,7 +575,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setMerchantSearchCursor(undefined);
   };
 
-  // ===== SUBMIT EDIT =====
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCard) return;
@@ -573,7 +589,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         ? editMerchantNames
         : collectMerchantNames(editMerchantIds);
 
-    const constraintPayload = buildConstraintPayload(
+    const spendingConstraint = buildConstraintPayload(
       editDailyLimit,
       editMinTx,
       editMaxTx,
@@ -585,7 +601,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
     const payload: ApiUpdateCardParam & { status?: string } = {
       name: editingCard.name,
-      ...constraintPayload,
+      spendingConstraint: spendingConstraint || undefined,
       userData:
         merchantNames.length > 0
           ? { merchantNamesAllow: merchantNames }
@@ -607,7 +623,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     }
   };
 
-  // ===== HELPERS =====
   const formatAmount = (cents?: number | null): string => {
     if (cents == null) return "-";
     const usd = cents / 100;
@@ -667,49 +682,66 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     }
   };
 
-  // ===== OPEN DETAIL: LOAD VAULT =====
   const handleOpenDetail = async (card: Card) => {
     setShowCvv(false);
     setCvvCheckMode(false);
     setCvvCheckFirst3("");
     setCvvCheckLast3("");
 
-    setDetailCard(card);
+    setDetailCard(card as CardDetailState);
     setDetailLoading(true);
 
     try {
-      const vault = await cardApi.getVaultCard(card.id);
-      const v = vault && vault.data ? vault.data : vault || {};
+      const detail = await cardApi.getSlashDetailWithSensitive(
+        card.id,
+        true,
+        true
+      );
 
-      const updated: Card = {
-        ...card,
-        pan: v.pan ?? (v.card_number as string | undefined) ?? card.pan ?? null,
-        cvv: v.cvv ?? card.cvv ?? null,
-        last4: v.last4 ?? card.last4 ?? null,
+      const d: any = detail;
+
+      const updated: CardDetailState = {
+        ...(card as any),
+        pan: d.pan ?? d.card_number ?? (card as any).pan ?? null,
+        cvv: d.cvv ?? (card as any).cvv ?? null,
+        last4: d.last4 ?? (card as any).last4 ?? null,
         expiryMonth:
-          v.exp_month ??
-          v.expiry_month ??
-          v.expiryMonth ??
-          card.expiryMonth ??
+          d.expiryMonth ??
+          d.expiry_month ??
+          d.exp_month ??
+          (card as any).expiryMonth ??
           null,
         expiryYear:
-          v.exp_year ??
-          v.expiry_year ??
-          v.expiryYear ??
-          card.expiryYear ??
+          d.expiryYear ??
+          d.expiry_year ??
+          d.exp_year ??
+          (card as any).expiryYear ??
           null,
+        isPhysical:
+          d.isPhysical ??
+          d.physical ??
+          (card as any).isPhysical ??
+          (card as any).physical ??
+          null,
+        isSingleUse:
+          d.isSingleUse ??
+          d.singleUse ??
+          (card as any).isSingleUse ??
+          (card as any).singleUse ??
+          null,
+        status: d.status ?? card.status ?? null,
+        createdAt: d.createdAt ?? card.createdAt ?? null,
       };
 
       setDetailCard(updated);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load card from Vault");
+      toast.error("Failed to load card details");
     } finally {
       setDetailLoading(false);
     }
   };
 
-  // ===== RENDER =====
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-slate-500">
@@ -720,118 +752,126 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
   return (
     <div className="space-y-5">
-      {/* TOP SUMMARY CARD */}
-      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 text-white shadow-lg p-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="text-xs uppercase tracking-[0.16em] text-indigo-100">
-            Cards management
-          </div>
-          <div className="text-xl font-semibold">
-            {activeAccount ? activeAccount.name : "No active account"}
-          </div>
-          <div className="flex flex-wrap gap-3 text-xs text-indigo-100/90">
-            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              Accounts: {accounts.length}
-            </span>
-            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
-              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
-              Virtual accounts: {vaLoading ? "..." : vaOptions.length || "0"}
-            </span>
-            <span className="inline-flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-              Card groups: {cardGroupLoading ? "..." : cardGroups.length || "0"}
-            </span>
+      {/* HEADER + FILTER TRONG 1 CARD */}
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200/70 px-4 py-4 space-y-4">
+        {/* HÀNG 1: SUMMARY + ACTIONS */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">
+              Cards management
+            </div>
+            <div className="text-xl font-semibold text-slate-900">
+              {activeAccount ? activeAccount.name : "No active account"}
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs text-slate-700">
+              <span className="inline-flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                Virtual accounts: {vaLoading ? "..." : vaOptions.length || "0"}
+              </span>
+              <span className="inline-flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                Card groups:{" "}
+                {cardGroupLoading ? "..." : cardGroups.length || "0"}
+              </span>
+            </div>
+          </div>  
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing || !activeAccountId }
+              className="rounded-full bg-indigo-600 text-white px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {syncing ? "Refreshing..." : "🔄 Refresh "}
+            </button>
+
+            <button
+              className="rounded-full bg-slate-900 text-white px-5 py-1.5 text-sm font-medium shadow-md hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              onClick={openCreateModal}
+              disabled={vaOptions.length === 0}
+            >
+              + Create card
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            className="rounded-full bg-white text-indigo-700 px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-50 disabled:opacity-50 transition-colors"
-            onClick={openCreateModal}
-            disabled={vaOptions.length === 0}
-          >
-            + Create card
-          </button>
-        </div>
-      </div>
+        {/* HÀNG 2: FILTER BAR */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            {/* Group filter */}
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+                Group
+              </span>
+              <select
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                value={selectedGroupId ?? ""}
+                onChange={(e) =>
+                  setSelectedGroupId(
+                    e.target.value ? Number(e.target.value) : null
+                  )
+                }
+              >
+                <option value="">All groups</option>
+                {cardGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {/* FILTER BAR */}
-      <div className="rounded-2xl bg-white shadow-sm border border-slate-200/60 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          {/* Group filter */}
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-              Group
-            </span>
-            <select
-              className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-              value={selectedGroupId ?? ""}
-              onChange={(e) =>
-                setSelectedGroupId(
-                  e.target.value ? Number(e.target.value) : null
-                )
-              }
-            >
-              <option value="">All groups</option>
-              {cardGroups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+            {/* Virtual account filter */}
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+                Virtual account
+              </span>
+              <select
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                value={selectedVaId ?? ""}
+                onChange={(e) =>
+                  setSelectedVaId(
+                    e.target.value ? Number(e.target.value) : null
+                  )
+                }
+              >
+                <option value="">All virtual accounts</option>
+                {vaOptions.map((va) => (
+                  <option key={va.id} value={va.id}>
+                    {va.name || va.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status filter */}
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+                Status
+              </span>
+              <select
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
           </div>
 
-          {/* Virtual account filter */}
+          {/* Search */}
           <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-              Virtual account
-            </span>
-            <select
-              className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-              value={selectedVaId ?? ""}
-              onChange={(e) =>
-                setSelectedVaId(e.target.value ? Number(e.target.value) : null)
-              }
-            >
-              <option value="">All virtual accounts</option>
-              {vaOptions.map((va) => (
-                <option key={va.id} value={va.id}>
-                  {va.name || va.id}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status filter */}
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-              Status
-            </span>
-            <select
-              className="border border-slate-200 rounded-full px-3 py-1 min-w-[140px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="paused">Paused</option>
-            </select>
-          </div>
-        </div>
-
-        {/* search */}
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <input
-              className="border border-slate-200 rounded-full pl-9 pr-3 py-1.5 text-sm min-w-[220px] bg-slate-50 text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-              placeholder="Search by name or last 4..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <span className="absolute left-3 top-1.5 text-slate-400 text-xs">
-              🔍
-            </span>
+            <div className="relative">
+              <input
+                className="rounded-xl w-[290px] p-5 border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                placeholder="Search by name or last 4..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -916,15 +956,15 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                           <span className="inline-block h-3 w-3 border-[2px] border-indigo-400 border-t-transparent rounded-full animate-spin" />
                         )}
                       </button>
-                      {card.last4 && (
+                      {(card as any).last4 && (
                         <span className="inline-flex items-center text-[11px] bg-emerald-50 text-emerald-700 rounded-full px-2 py-[1px] w-fit">
-                          **** {card.last4}
+                          **** {(card as any).last4}
                         </span>
                       )}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">
-                    {card.cardGroupName || "-"}
+                    {(card as any).cardGroupName || "-"}
                   </td>
                   <td className="px-4 py-3 text-slate-700">
                     {card.virtualAccountName || card.virtualAccountId || "-"}
@@ -932,12 +972,14 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   <td className="px-4 py-3 text-slate-700">
                     <span
                       className={`inline-flex items-center px-2 py-[2px] rounded-full text-[11px] font-medium ${
-                        card.dailyLimitCents != null && card.dailyLimitCents > 0
+                        (card as any).dailyLimitCents != null &&
+                        (card as any).dailyLimitCents > 0
                           ? "bg-amber-50 text-amber-700"
                           : "bg-slate-50 text-slate-600"
                       }`}
                     >
-                      {card.dailyLimitCents != null && card.dailyLimitCents > 0
+                      {(card as any).dailyLimitCents != null &&
+                      (card as any).dailyLimitCents > 0
                         ? "Limited"
                         : "No limit"}
                     </span>
@@ -961,8 +1003,10 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       : "-"}
                   </td>
                   <td className="px-4 py-3 text-slate-700 text-sm">
-                    {card.expiryMonth && card.expiryYear
-                      ? `${card.expiryMonth}/${card.expiryYear}`
+                    {(card as any).expiryMonth && (card as any).expiryYear
+                      ? `${(card as any).expiryMonth}/${
+                          (card as any).expiryYear
+                        }`
                       : "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -1086,7 +1130,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     Card name
                   </label>
                   <input
-                    className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     required
@@ -1100,7 +1144,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     <input
                       type="number"
                       min={0}
-                      className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                      className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                       placeholder="Empty = no limit"
                       value={createDailyLimit ?? ""}
                       onChange={(e) =>
@@ -1197,11 +1241,11 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                           type="checkbox"
                           className="rounded border-slate-300"
                           checked={createMerchantCategories.includes(
-                            cat.slashId
+                            (cat as any).slashId
                           )}
                           onChange={() =>
                             setCreateMerchantCategories((prev) =>
-                              toggleStringInArray(prev, cat.slashId)
+                              toggleStringInArray(prev, (cat as any).slashId)
                             )
                           }
                         />
@@ -1219,7 +1263,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
                 <div className="flex gap-2 items-center">
                   <input
-                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     placeholder="Type at least 3 characters to search merchant..."
                     value={merchantSearchQuery}
                     onChange={(e) => setMerchantSearchQuery(e.target.value)}
@@ -1368,7 +1412,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     Card name
                   </label>
                   <input
-                    className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                    className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                     value={editingCard.name}
                     onChange={(e) =>
                       setEditingCard({ ...editingCard, name: e.target.value })
@@ -1397,7 +1441,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     <input
                       type="number"
                       min={0}
-                      className="border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
+                      className="border border-slate-200 rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
                       value={editDailyLimit ?? ""}
                       onChange={(e) =>
                         setEditDailyLimit(
@@ -1484,10 +1528,12 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                         <input
                           type="checkbox"
                           className="rounded border-slate-300"
-                          checked={editMerchantCategories.includes(cat.slashId)}
+                          checked={editMerchantCategories.includes(
+                            (cat as any).slashId
+                          )}
                           onChange={() =>
                             setEditMerchantCategories((prev) =>
-                              toggleStringInArray(prev, cat.slashId)
+                              toggleStringInArray(prev, (cat as any).slashId)
                             )
                           }
                         />
@@ -1505,7 +1551,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
                 <div className="flex gap-2 items-center">
                   <input
-                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    className="border border-slate-200 rounded-lg px-3 py-2 flex-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     placeholder="Type at least 3 characters to search merchant..."
                     value={merchantSearchQuery}
                     onChange={(e) => setMerchantSearchQuery(e.target.value)}
@@ -1683,7 +1729,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 )}
 
               {/* CVV + VERIFY */}
-              <p className="flex flex-col gap-1 text-sm">
+              <div className="flex flex-col gap-1 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">CVV:</span>
                   {detailCard.cvv && !showCvv && (
@@ -1763,7 +1809,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     </button>
                   </div>
                 )}
-              </p>
+              </div>
 
               {detailCard.last4 && (
                 <p>
@@ -1780,7 +1826,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </p>
             </div>
 
-            {/* CARD FRONT / BACK */}
             <div className="grid md:grid-cols-2 h-[190px] gap-4 mb-5">
               {/* FRONT */}
               <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white px-5 py-4">

@@ -1,8 +1,8 @@
-// src/api/api.cardgroup.ts
 import api from "../config/api.config";
 import {
   ApiCreateCardGroupParam,
   ApiUpdateCardGroupParam,
+  ApiUpdateVisibilityParam,
   CardGroupPage,
   CardGroupSpendingConstraintParam,
   CardGroupUtilization,
@@ -96,5 +96,20 @@ export const cardGroupApi = {
       `/api/card-groups/${id}/utilization`
     );
     return data;
+  },
+  
+  async setHiddenCardGroup(id: number, hidden: boolean): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden };
+    await api.patch(`/api/hidden/card-groups/${id}`, body);
+  },
+
+  async hideCardGroup(id: number): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden: true };
+    await api.patch(`/api/hidden/card-groups/${id}`, body);
+  },
+
+  async unhideCardGroup(id: number): Promise<void> {
+    const body: ApiUpdateVisibilityParam = { hidden: false };
+    await api.patch(`/api/hidden/card-groups/${id}`, body);
   },
 };

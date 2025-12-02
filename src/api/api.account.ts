@@ -30,10 +30,8 @@ export const AccountGetAll = async (
   page = 0,
   size = 10
 ): Promise<AccountPage> => {
-//   const token = localStorage.getItem("token");
   const res = await api.get<AccountPage>("/api/accounts", {
     params: { page, size },
-    // headers: { Authorization: `Bearer ${token}` },
   });
   return res.data;
 };
@@ -43,7 +41,6 @@ export async function AccountGetOne(id: number): Promise<Account> {
   return res.data;
 }
 
-// Tạo account mới
 export async function AccountCreate(
   payload: ApiCreateAccountParam
 ): Promise<Account> {
@@ -51,7 +48,6 @@ export async function AccountCreate(
   return res.data;
 }
 
-// Update account
 export async function AccountUpdate(
   id: number,
   payload: ApiUpdateAccountParam
@@ -60,7 +56,6 @@ export async function AccountUpdate(
   return res.data;
 }
 
-// Xóa account
 export async function AccountDelete(id: number): Promise<void> {
   await api.delete(`/api/accounts/${id}`);
 }

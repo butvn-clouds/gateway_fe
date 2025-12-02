@@ -1,16 +1,36 @@
+// src/components/card-group/CardGroupManager.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
 import { useAuth } from "../../context/AuthContextProvider";
-import { Account, CardGroup, VirtualAccount } from "../../types/Types";
+import {
+  Account,
+  CardGroup,
+  VirtualAccount,
+  CardCountryOption,
+  MccCodeOption,
+  Merchant,
+  MerchantCategory,
+  MerchantSearchResponse,
+  CardSpendingConstraintParam,
+} from "../../types/Types";
 import { cardGroupApi } from "../../api/api.cardgroup";
 import { virtualAccountApi } from "../../api/api.virtualaccout";
-import { toast } from "react-toastify";
+import { cardMetaApi } from "../../api/api.cardMeta";
+import { merchantApi } from "../../api/api.merchant";
 
 interface Props {
   pageSize?: number;
 }
 
+type RuleMode = "OFF" | "ALLOWED" | "BLOCKED";
+
+const toggleStringInArray = (arr: string[], value: string): string[] =>
+  arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+
 export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const { user, loading } = useAuth();
+
+  // ======================== LIST / BASIC STATE ========================
   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -18,6 +38,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [syncing, setSyncing] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [search, setSearch] = useState("");
+
+  // CREATE
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -27,9 +49,13 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [createMaxTxnUsd, setCreateMaxTxnUsd] = useState<number>(0);
   const [createDailyLimitUsdInput, setCreateDailyLimitUsdInput] =
     useState<string>("");
-  const [createMinTxnUsdInput, setCreateMinTxnUsdInput] = useState<string>("");
-  const [createMaxTxnUsdInput, setCreateMaxTxnUsdInput] = useState<string>("");
+  const [createMinTxnUsdInput, setCreateMinTxnUsdInput] =
+    useState<string>("");
+  const [createMaxTxnUsdInput, setCreateMaxTxnUsdInput] =
+    useState<string>("");
   const [createStartDate, setCreateStartDate] = useState<string>("");
+
+  // EDIT BASIC
   const [showEdit, setShowEdit] = useState(false);
   const [editingGroup, setEditingGroup] = useState<CardGroup | null>(null);
   const [editName, setEditName] = useState("");
@@ -37,10 +63,61 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [editMinTxnUsd, setEditMinTxnUsd] = useState<number>(0);
   const [editMaxTxnUsd, setEditMaxTxnUsd] = useState<number>(0);
   const [editStartDate, setEditStartDate] = useState<string>("");
+  const [editMinTxnUsdInput, setEditMinTxnUsdInput] =
+    useState<string>("");
+  const [editMaxTxnUsdInput, setEditMaxTxnUsdInput] =
+    useState<string>("");
+
+  // VIRTUAL ACCOUNTS
   const [accountVirtualAccounts, setAccountVirtualAccounts] = useState<
     VirtualAccount[]
   >([]);
   const [loadingVa, setLoadingVa] = useState(false);
+
+  // ======================== LIMITS MODAL STATE ========================
+  const [showLimits, setShowLimits] = useState(false);
+  const [limitsGroup, setLimitsGroup] = useState<CardGroup | null>(null);
+  const [limitsLoading, setLimitsLoading] = useState(false);
+  const [limitsSaving, setLimitsSaving] = useState(false);
+  const [initialConstraint, setInitialConstraint] =
+    useState<CardSpendingConstraintParam | null>(null);
+
+  // META (countries, MCC, merchant categories)
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [countries, setCountries] = useState<CardCountryOption[]>([]);
+  const [mccCodes, setMccCodes] = useState<MccCodeOption[]>([]);
+  const [merchantCategories, setMerchantCategories] = useState<
+    MerchantCategory[]
+  >([]);
+
+  // RULE MODES
+  const [merchantCategoryMode, setMerchantCategoryMode] =
+    useState<RuleMode>("OFF");
+  const [mccMode, setMccMode] = useState<RuleMode>("OFF");
+  const [merchantMode, setMerchantMode] = useState<RuleMode>("OFF");
+  const [countryMode, setCountryMode] = useState<RuleMode>("OFF");
+
+  // SELECTED VALUES
+  const [selectedMerchantCategoryIds, setSelectedMerchantCategoryIds] =
+    useState<string[]>([]);
+  const [selectedMccCodes, setSelectedMccCodes] = useState<string[]>([]);
+  const [selectedMerchantIds, setSelectedMerchantIds] = useState<string[]>(
+    []
+  );
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(
+    []
+  );
+
+  // MERCHANT SEARCH
+  const [merchantSearchQuery, setMerchantSearchQuery] = useState("");
+  const [merchantSearchLoading, setMerchantSearchLoading] =
+    useState(false);
+  const [merchantSearchCursor, setMerchantSearchCursor] = useState<
+    string | null
+  >(null);
+  const [merchantResults, setMerchantResults] = useState<Merchant[]>([]);
+
+  // ======================== COMMON HELPERS ========================
 
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
 
@@ -55,6 +132,29 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     if (!activeAccountId) return null;
     return accounts.find((acc) => acc.id === activeAccountId) || null;
   }, [accounts, activeAccountId]);
+
+  const formatUsd = (cents?: number | null) => {
+    if (cents == null) return "-";
+
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  };
+
+  const usdToCents = (usd: number) => {
+    if (!Number.isFinite(usd)) return 0;
+    return Math.round(usd * 100);
+  };
+
+  const centsToUsd = (cents?: number | null) => {
+    if (cents == null) return 0;
+    return Number((cents / 100).toFixed(2));
+  };
+
+  // ======================== LOAD VIRTUAL ACCOUNTS ========================
 
   useEffect(() => {
     const fetchVAs = async () => {
@@ -84,7 +184,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         console.error(err);
         setAccountVirtualAccounts([]);
         toast.error(
-          err?.response?.data?.message || "Unable to load virtual accounts"
+          err?.response?.data?.message ||
+            "Unable to load virtual accounts"
         );
       } finally {
         setLoadingVa(false);
@@ -93,30 +194,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
     fetchVAs();
   }, [activeAccountId]);
-
-  const formatUsd = (cents?: number | null) => {
-    if (cents == null) return "-";
-
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(cents / 100);
-  };
-
-  const [editMinTxnUsdInput, setEditMinTxnUsdInput] = useState<string>("");
-  const [editMaxTxnUsdInput, setEditMaxTxnUsdInput] = useState<string>("");
-
-  const usdToCents = (usd: number) => {
-    if (!Number.isFinite(usd)) return 0;
-    return Math.round(usd * 100);
-  };
-
-  const centsToUsd = (cents?: number | null) => {
-    if (cents == null) return 0;
-    return Number((cents / 100).toFixed(2));
-  };
 
   useEffect(() => {
     setPage(0);
@@ -130,6 +207,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       setCreateVaId(null);
     }
   }, [activeAccountId, accountVirtualAccounts]);
+
+  // ======================== LOAD CARD GROUP LIST ========================
 
   const loadData = async (
     accountId: number,
@@ -157,7 +236,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
           : 0;
 
       const tp =
-        typeof res.totalPages === "number" && Number.isFinite(res.totalPages)
+        typeof res.totalPages === "number" &&
+        Number.isFinite(res.totalPages)
           ? res.totalPages
           : typeof (res as any).total_pages === "number"
           ? (res as any).total_pages
@@ -167,7 +247,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       setTotalPages(tp);
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Unable to load card groups");
+      toast.error(
+        err?.response?.data?.message || "Unable to load card groups"
+      );
     } finally {
       setFetching(false);
     }
@@ -180,6 +262,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       setData([]);
     }
   }, [activeAccountId, selectedVaId, page]);
+
+  // ======================== SEARCH & SYNC ========================
 
   const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,7 +288,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       toast.success("Sync card groups successful");
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Sync card groups failed");
+      toast.error(
+        err?.response?.data?.message || "Sync card groups failed"
+      );
     } finally {
       setSyncing(false);
     }
@@ -226,15 +312,15 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   };
 
+  // ======================== CREATE ========================
+
   const openCreateModal = () => {
     setCreateName("");
 
-    // reset số
     setCreateDailyLimitUsd(0);
     setCreateMinTxnUsd(0);
     setCreateMaxTxnUsd(0);
 
-    // reset input string
     setCreateDailyLimitUsdInput("");
     setCreateMinTxnUsdInput("");
     setCreateMaxTxnUsdInput("");
@@ -293,6 +379,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   };
 
+  // ======================== EDIT BASIC INFO ========================
+
   const openEditModal = (cg: CardGroup) => {
     setEditingGroup(cg);
     setEditName(cg.name ?? "");
@@ -343,6 +431,238 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   };
 
+  // ======================== LIMITS MODAL: META LOAD ========================
+
+  useEffect(() => {
+    if (!showLimits) return;
+
+    const loadMeta = async () => {
+      try {
+        setMetaLoading(true);
+        const [c, m, catRes] = await Promise.all([
+          cardMetaApi.getCountries(),
+          cardMetaApi.getMccCodes(),
+          merchantApi.getAllCategories(),
+        ]);
+
+        setCountries(c.sort((a, b) => a.code.localeCompare(b.code, "en-US")));
+        setMccCodes(m.sort((a, b) => a.code.localeCompare(b.code, "en-US")));
+        setMerchantCategories(catRes);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load metadata");
+      } finally {
+        setMetaLoading(false);
+      }
+    };
+
+    loadMeta();
+  }, [showLimits]);
+
+  // ======================== LIMITS MODAL: INIT FROM API ========================
+
+  const openLimitsModal = async (cg: CardGroup) => {
+    setLimitsGroup(cg);
+    setShowLimits(true);
+    setInitialConstraint(null);
+    setMerchantCategoryMode("OFF");
+    setMccMode("OFF");
+    setMerchantMode("OFF");
+    setCountryMode("OFF");
+    setSelectedMerchantCategoryIds([]);
+    setSelectedMccCodes([]);
+    setSelectedMerchantIds([]);
+    setSelectedCountries([]);
+    setMerchantSearchQuery("");
+    setMerchantResults([]);
+    setMerchantSearchCursor(null);
+
+    try {
+      setLimitsLoading(true);
+      // nếu bạn chưa có API này, tạo trong api.cardgroup.ts
+      const constraint =
+        (await cardGroupApi.getSpendingConstraint(
+          cg.id
+        )) as CardSpendingConstraintParam | null;
+      setInitialConstraint(constraint || null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to load card group limits (using defaults)"
+      );
+      setInitialConstraint(null);
+    } finally {
+      setLimitsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showLimits) return;
+
+    const c = initialConstraint;
+
+    // Countries
+    if (c && c.countries && c.countries.length > 0 && c.countryRestriction) {
+      setCountryMode(c.countryRestriction === "ALLOW" ? "ALLOWED" : "BLOCKED");
+      setSelectedCountries(c.countries);
+    } else {
+      setCountryMode("OFF");
+      setSelectedCountries([]);
+    }
+
+    // MCC codes
+    if (
+      c &&
+      c.merchantCategoryCodes &&
+      c.merchantCategoryCodes.length > 0 &&
+      c.merchantCategoryCodeRestriction
+    ) {
+      setMccMode(
+        c.merchantCategoryCodeRestriction === "ALLOW"
+          ? "ALLOWED"
+          : "BLOCKED"
+      );
+      setSelectedMccCodes(c.merchantCategoryCodes);
+    } else {
+      setMccMode("OFF");
+      setSelectedMccCodes([]);
+    }
+
+    // Merchant categories
+    if (
+      c &&
+      c.merchantCategories &&
+      c.merchantCategories.length > 0 &&
+      c.merchantCategoryRestriction
+    ) {
+      setMerchantCategoryMode(
+        c.merchantCategoryRestriction === "ALLOW"
+          ? "ALLOWED"
+          : "BLOCKED"
+      );
+      setSelectedMerchantCategoryIds(c.merchantCategories.map(String));
+    } else {
+      setMerchantCategoryMode("OFF");
+      setSelectedMerchantCategoryIds([]);
+    }
+
+    // Merchants
+    if (
+      c &&
+      c.merchantIds &&
+      c.merchantIds.length > 0 &&
+      c.merchantRestriction
+    ) {
+      setMerchantMode(
+        c.merchantRestriction === "ALLOW" ? "ALLOWED" : "BLOCKED"
+      );
+      setSelectedMerchantIds(c.merchantIds);
+    } else {
+      setMerchantMode("OFF");
+      setSelectedMerchantIds([]);
+    }
+
+    setMerchantSearchQuery("");
+    setMerchantResults([]);
+    setMerchantSearchCursor(null);
+  }, [showLimits, initialConstraint]);
+
+  // ======================== LIMITS MODAL: MERCHANT SEARCH ========================
+
+  const handleSearchMerchants = async (cursor?: string | null) => {
+    if (!merchantSearchQuery.trim()) {
+      setMerchantResults([]);
+      setMerchantSearchCursor(null);
+      return;
+    }
+
+    if (!activeAccountId) {
+      toast.error("No account selected for merchant search");
+      return;
+    }
+
+    try {
+      setMerchantSearchLoading(true);
+      const res: MerchantSearchResponse = await merchantApi.searchMerchants(
+        activeAccountId,
+        merchantSearchQuery.trim(),
+        cursor ?? undefined,
+        undefined
+      );
+
+      setMerchantResults(res.items ?? []);
+      setMerchantSearchCursor(res.metadata?.nextCursor ?? null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message || "Failed to search merchants"
+      );
+    } finally {
+      setMerchantSearchLoading(false);
+    }
+  };
+
+  // ======================== LIMITS MODAL: BUILD PAYLOAD ========================
+
+  const buildPayloadFromState = (): CardSpendingConstraintParam => {
+    const payload: CardSpendingConstraintParam = {};
+
+    // Merchant categories
+    if (
+      merchantCategoryMode !== "OFF" &&
+      selectedMerchantCategoryIds.length > 0
+    ) {
+      payload.merchantCategories = selectedMerchantCategoryIds;
+      payload.merchantCategoryRestriction =
+        merchantCategoryMode === "ALLOWED" ? "ALLOW" : "DENY";
+    }
+
+    // MCC codes
+    if (mccMode !== "OFF" && selectedMccCodes.length > 0) {
+      payload.merchantCategoryCodes = selectedMccCodes;
+      payload.merchantCategoryCodeRestriction =
+        mccMode === "ALLOWED" ? "ALLOW" : "DENY";
+    }
+
+    // Merchants
+    if (merchantMode !== "OFF" && selectedMerchantIds.length > 0) {
+      payload.merchantIds = selectedMerchantIds;
+      payload.merchantRestriction =
+        merchantMode === "ALLOWED" ? "ALLOW" : "DENY";
+    }
+
+    // Countries
+    if (countryMode !== "OFF" && selectedCountries.length > 0) {
+      payload.countries = selectedCountries;
+      payload.countryRestriction =
+        countryMode === "ALLOWED" ? "ALLOW" : "DENY";
+    }
+
+    return payload;
+  };
+
+  const handleSaveLimits = async () => {
+    if (!limitsGroup) return;
+    try {
+      setLimitsSaving(true);
+      const payload = buildPayloadFromState();
+      await cardGroupApi.patchSpendingConstraint(limitsGroup.id, payload);
+      toast.success("Saved card group limits successfully");
+      setShowLimits(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to save card group limits"
+      );
+    } finally {
+      setLimitsSaving(false);
+    }
+  };
+
+  // ======================== UTILS ========================
+
   const findVaName = (id: number | null, cg?: CardGroup): string => {
     if (!user) return "-";
 
@@ -362,10 +682,13 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   if (loading) return <div>Check auth...</div>;
   if (!user) return <div>Not logged in</div>;
 
+  // ======================== RENDER ========================
   return (
     <>
+      {/* MAIN CARD */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
         <div className="space-y-4">
+          {/* Header / Filters */}
           <div className="flex flex-wrap items-center gap-3 justify-between mb-2">
             <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
               <div className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800">
@@ -395,7 +718,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                 ))}
               </select>
 
-              <form onSubmit={handleSearchSubmit} className="flex items-center">
+              <form
+                onSubmit={handleSearchSubmit}
+                className="flex items-center"
+              >
                 <input
                   className="rounded-l-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   placeholder="Search name..."
@@ -430,6 +756,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
             </div>
           </div>
 
+          {/* TABLE */}
           <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
             <div className="max-w-full overflow-x-auto">
               <table className="min-w-full text-xs sm:text-sm">
@@ -494,9 +821,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                               <div className="text-xs sm:text-sm font-medium text-slate-900">
                                 {cg.name ?? "-"}
                               </div>
-                              {/* <div className="text-[10px] text-slate-400">
-                                Slash ID: {cg.slashId}
-                              </div> */}
                             </div>
                           </div>
                         </td>
@@ -545,19 +869,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                           </div>
                         </td>
 
-                        {/* Status */}
-                        {/* <td className="px-4 py-3 text-center">
-                          {cg.closed ? (
-                            <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-600">
-                              Closed
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                              Active
-                            </span>
-                          )}
-                        </td> */}
-
                         {/* Actions */}
                         <td className="px-4 py-3 text-center">
                           <div className="inline-flex items-center gap-1 sm:gap-2">
@@ -565,14 +876,29 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                               className="inline-flex items-center gap-1 rounded-full bg-sky-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-sky-600 transition"
                               onClick={() => openEditModal(cg)}
                             >
-                              <span className="hidden sm:inline">Edit</span>
+                              <span className="hidden sm:inline">
+                                Edit
+                              </span>
                               <span className="sm:hidden">✏️</span>
                             </button>
+
+                            <button
+                              className="inline-flex items-center gap-1 rounded-full bg-indigo-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-indigo-600 transition"
+                              onClick={() => openLimitsModal(cg)}
+                            >
+                              <span className="hidden sm:inline">
+                                Limits
+                              </span>
+                              <span className="sm:hidden">⚙️</span>
+                            </button>
+
                             <button
                               className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-red-600 transition"
                               onClick={() => handleDelete(cg.id)}
                             >
-                              <span className="hidden sm:inline">Delete</span>
+                              <span className="hidden sm:inline">
+                                Delete
+                              </span>
                               <span className="sm:hidden">🗑</span>
                             </button>
                           </div>
@@ -584,10 +910,13 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
               </table>
             </div>
 
+            {/* Pagination */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 bg-white/80 px-4 py-3">
               <p className="text-[11px] sm:text-xs text-slate-500">
                 Page{" "}
-                <span className="font-semibold text-slate-800">{page + 1}</span>{" "}
+                <span className="font-semibold text-slate-800">
+                  {page + 1}
+                </span>{" "}
                 of{" "}
                 <span className="font-semibold text-slate-800">
                   {Math.max(totalPages, 1)}
@@ -618,7 +947,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         </div>
       </div>
 
-      {/* CREATE MODAL */}
+      {/* ======================== CREATE MODAL ======================== */}
       {showCreate && (
         <div className="fixed inset-0 z-[999] bg-black/40">
           <div className="absolute left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden px-4 sm:px-0">
@@ -690,7 +1019,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
                       const cleaned = raw.replace(/,/g, "");
                       const num = parseFloat(cleaned);
-                      setCreateDailyLimitUsd(Number.isNaN(num) ? 0 : num);
+                      setCreateDailyLimitUsd(
+                        Number.isNaN(num) ? 0 : num
+                      );
                     }}
                     onBlur={() => {
                       if (!createDailyLimitUsdInput) return;
@@ -722,7 +1053,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                     }}
                     onBlur={() => {
                       if (!createMinTxnUsdInput) return;
-                      setCreateMinTxnUsdInput(createMinTxnUsd.toFixed(2));
+                      setCreateMinTxnUsdInput(
+                        createMinTxnUsd.toFixed(2)
+                      );
                     }}
                     placeholder="0.00"
                   />
@@ -748,7 +1081,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                     }}
                     onBlur={() => {
                       if (!createMaxTxnUsdInput) return;
-                      setCreateMaxTxnUsdInput(createMaxTxnUsd.toFixed(2));
+                      setCreateMaxTxnUsdInput(
+                        createMaxTxnUsd.toFixed(2)
+                      );
                     }}
                     placeholder="0.00"
                   />
@@ -779,7 +1114,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         </div>
       )}
 
-      {/* EDIT MODAL */}
+      {/* ======================== EDIT MODAL ======================== */}
       {showEdit && editingGroup && (
         <div className="fixed inset-0 z-[999] bg-black/40">
           <div className="absolute left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden px-4 sm:px-0">
@@ -825,7 +1160,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                     onChange={(e) => {
                       const val = e.target.value;
                       const num = parseFloat(val);
-                      setEditDailyLimitUsd(Number.isNaN(num) ? 0 : num);
+                      setEditDailyLimitUsd(
+                        Number.isNaN(num) ? 0 : num
+                      );
                     }}
                   />
                 </div>
@@ -902,6 +1239,446 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                 Update
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================== LIMITS MODAL ======================== */}
+      {showLimits && limitsGroup && (
+        <div className="fixed inset-0 z-[999] bg-black/40 flex items-center justify-center">
+          <div className="w-full max-w-4xl rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/70 bg-white/80">
+              <h2 className="text-base font-semibold text-slate-900">
+                Card Group Limits – {limitsGroup.name ?? `#${limitsGroup.id}`}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowLimits(false)}
+                className="text-pink-500 text-xl leading-none hover:text-pink-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row">
+              {/* LEFT: rules */}
+              <div className="flex-1 px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                {limitsLoading && (
+                  <div className="text-xs text-slate-500 mb-2">
+                    Loading current limits...
+                  </div>
+                )}
+                {metaLoading && (
+                  <div className="text-xs text-slate-500 mb-2">
+                    Loading metadata...
+                  </div>
+                )}
+
+                {/* Merchant Categories */}
+                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Merchant Categories
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Configure which merchant categories are allowed or
+                        blocked.
+                      </div>
+                    </div>
+                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
+                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
+                        (mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() =>
+                              setMerchantCategoryMode(mode)
+                            }
+                            className={`px-3 py-1 rounded-full ${
+                              merchantCategoryMode === mode
+                                ? mode === "OFF"
+                                  ? "bg-white text-slate-800 shadow-sm"
+                                  : mode === "ALLOWED"
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : "bg-red-500 text-white shadow-sm"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            {mode === "OFF"
+                              ? "Off"
+                              : mode === "ALLOWED"
+                              ? "Allowed"
+                              : "Blocked"}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  {merchantCategoryMode !== "OFF" && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <div className="text-[11px] text-slate-500 mb-2">
+                        Select merchant categories:
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {merchantCategories.length === 0 ? (
+                          <div className="text-xs text-slate-400">
+                            No categories loaded.
+                          </div>
+                        ) : (
+                          merchantCategories.map((cat) => {
+                            const id = String(cat.id);
+                            const checked =
+                              selectedMerchantCategoryIds.includes(
+                                id
+                              );
+                            return (
+                              <label
+                                key={id}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-slate-300"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedMerchantCategoryIds(
+                                      (prev) =>
+                                        toggleStringInArray(prev, id)
+                                    )
+                                  }
+                                />
+                                <span className="text-xs text-slate-800">
+                                  {cat.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Allowed MCCs */}
+                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Allowed MCCs
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Restrict spend by merchant category codes.
+                      </div>
+                    </div>
+                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
+                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
+                        (mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setMccMode(mode)}
+                            className={`px-3 py-1 rounded-full ${
+                              mccMode === mode
+                                ? mode === "OFF"
+                                  ? "bg-white text-slate-800 shadow-sm"
+                                  : mode === "ALLOWED"
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : "bg-red-500 text-white shadow-sm"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            {mode === "OFF"
+                              ? "Off"
+                              : mode === "ALLOWED"
+                              ? "Allowed"
+                              : "Blocked"}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  {mccMode !== "OFF" && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <div className="text-[11px] text-slate-500 mb-2">
+                        Select MCC codes:
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1 border border-slate-100 rounded-xl p-2">
+                        {mccCodes.length === 0 ? (
+                          <div className="text-xs text-slate-400">
+                            No MCC codes loaded.
+                          </div>
+                        ) : (
+                          mccCodes.map((mcc) => {
+                            const code = mcc.code;
+                            const checked =
+                              selectedMccCodes.includes(code);
+                            return (
+                              <label
+                                key={code}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-slate-300"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedMccCodes((prev) =>
+                                      toggleStringInArray(prev, code)
+                                    )
+                                  }
+                                />
+                                <span className="text-xs text-slate-800">
+                                  {code} – {mcc.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Merchants */}
+                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Merchants
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Limit spend to specific merchants or block some.
+                      </div>
+                    </div>
+                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
+                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
+                        (mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setMerchantMode(mode)}
+                            className={`px-3 py-1 rounded-full ${
+                              merchantMode === mode
+                                ? mode === "OFF"
+                                  ? "bg-white text-slate-800 shadow-sm"
+                                  : mode === "ALLOWED"
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : "bg-red-500 text-white shadow-sm"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            {mode === "OFF"
+                              ? "Off"
+                              : mode === "ALLOWED"
+                              ? "Allowed"
+                              : "Blocked"}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  {merchantMode !== "OFF" && (
+                    <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
+                      <div className="text-[11px] text-slate-500">
+                        Search and select merchants:
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="Type at least 3 characters to search merchant..."
+                          value={merchantSearchQuery}
+                          onChange={(e) =>
+                            setMerchantSearchQuery(e.target.value)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSearchMerchants();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSearchMerchants()}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-500 text-white text-xs font-medium hover:bg-indigo-600"
+                          disabled={merchantSearchLoading}
+                        >
+                          {merchantSearchLoading ? "Searching..." : "Search"}
+                        </button>
+                      </div>
+
+                      <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1">
+                        {merchantResults.length === 0 ? (
+                          <div className="text-xs text-slate-400">
+                            No merchants loaded.
+                          </div>
+                        ) : (
+                          merchantResults.map((m) => {
+                            const id = String(m.id);
+                            const checked =
+                              selectedMerchantIds.includes(id);
+                            return (
+                              <label
+                                key={id}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-slate-300"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedMerchantIds((prev) =>
+                                      toggleStringInArray(prev, id)
+                                    )
+                                  }
+                                />
+                                <span className="text-xs text-slate-800">
+                                    {m.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                        {merchantSearchCursor && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleSearchMerchants(
+                                merchantSearchCursor
+                              )
+                            }
+                            className="mt-1 text-[11px] text-indigo-600 hover:underline"
+                          >
+                            Load more…
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Countries */}
+                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Countries
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Control which countries are allowed for card
+                        transactions.
+                      </div>
+                    </div>
+                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
+                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
+                        (mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setCountryMode(mode)}
+                            className={`px-3 py-1 rounded-full ${
+                              countryMode === mode
+                                ? mode === "OFF"
+                                  ? "bg-white text-slate-800 shadow-sm"
+                                  : mode === "ALLOWED"
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : "bg-red-500 text-white shadow-sm"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            {mode === "OFF"
+                              ? "Off"
+                              : mode === "ALLOWED"
+                              ? "Allowed"
+                              : "Blocked"}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  {countryMode !== "OFF" && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <div className="text-[11px] text-slate-500 mb-2">
+                        Select countries (ISO2):
+                      </div>
+                      <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1">
+                        {countries.length === 0 ? (
+                          <div className="text-xs text-slate-400">
+                            No countries loaded.
+                          </div>
+                        ) : (
+                          countries.map((c) => {
+                            const code = c.code;
+                            const checked =
+                              selectedCountries.includes(code);
+                            return (
+                              <label
+                                key={code}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-slate-300"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedCountries((prev) =>
+                                      toggleStringInArray(prev, code)
+                                    )
+                                  }
+                                />
+                                <span className="text-xs text-slate-800">
+                                  {code} – {c.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: actions */}
+              <div className="w-full md:w-64 border-t md:border-t-0 md:border-l border-slate-200 bg-white/80 px-5 py-4 flex flex-col justify-between">
+                <div className="space-y-2 text-xs text-slate-600">
+                  <p className="font-semibold text-slate-900 mb-1">
+                    Summary
+                  </p>
+                  <p>
+                    Configure advanced rules for this card group. If a
+                    section is set to{" "}
+                    <span className="font-semibold">Off</span>, no
+                    additional limits will be applied for that dimension.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveLimits}
+                    disabled={limitsSaving}
+                    className="w-full rounded-xl bg-[#311BFF] py-2.5 text-sm font-semibold text-white shadow-md hover:bg-[#2612e8] disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {limitsSaving ? "Saving..." : "Save limits"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLimits(false)}
+                    disabled={limitsSaving}
+                    className="w-full rounded-xl border border-slate-300 bg-white py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
