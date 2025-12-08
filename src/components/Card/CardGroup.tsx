@@ -1,21 +1,17 @@
-// src/components/card-group/CardGroupManager.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { useAuth } from "../../context/AuthContextProvider";
 import {
   Account,
-  CardGroup,
+  CardsGroupsDTO,
   VirtualAccount,
-  CardCountryOption,
-  MccCodeOption,
   Merchant,
   MerchantCategory,
   MerchantSearchResponse,
-  CardSpendingConstraintParam,
+  CardGroupSpendingConstraintParam,
 } from "../../types/Types";
 import { cardGroupApi } from "../../api/api.cardgroup";
 import { virtualAccountApi } from "../../api/api.virtualaccout";
-import { cardMetaApi } from "../../api/api.cardMeta";
 import { merchantApi } from "../../api/api.merchant";
 
 interface Props {
@@ -34,7 +30,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [data, setData] = useState<CardGroup[]>([]);
+  const [data, setData] = useState<CardsGroupsDTO[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [search, setSearch] = useState("");
@@ -44,7 +40,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createVaId, setCreateVaId] = useState<number | null>(null);
-  const [createDailyLimitUsd, setCreateDailyLimitUsd] = useState<number>(0);
+  const [createDailyLimitUsd, setCreateDailyLimitUsd] =
+    useState<number>(0);
   const [createMinTxnUsd, setCreateMinTxnUsd] = useState<number>(0);
   const [createMaxTxnUsd, setCreateMaxTxnUsd] = useState<number>(0);
   const [createDailyLimitUsdInput, setCreateDailyLimitUsdInput] =
@@ -57,9 +54,12 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // EDIT BASIC
   const [showEdit, setShowEdit] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<CardGroup | null>(null);
+  const [editingGroup, setEditingGroup] = useState<CardGroup | null>(
+    null
+  );
   const [editName, setEditName] = useState("");
-  const [editDailyLimitUsd, setEditDailyLimitUsd] = useState<number>(0);
+  const [editDailyLimitUsd, setEditDailyLimitUsd] =
+    useState<number>(0);
   const [editMinTxnUsd, setEditMinTxnUsd] = useState<number>(0);
   const [editMaxTxnUsd, setEditMaxTxnUsd] = useState<number>(0);
   const [editStartDate, setEditStartDate] = useState<string>("");
@@ -80,12 +80,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [limitsLoading, setLimitsLoading] = useState(false);
   const [limitsSaving, setLimitsSaving] = useState(false);
   const [initialConstraint, setInitialConstraint] =
-    useState<CardSpendingConstraintParam | null>(null);
+    useState<CardGroupSpendingConstraintParam | null>(null);
 
-  // META (countries, MCC, merchant categories)
+  // META (merchant categories)
   const [metaLoading, setMetaLoading] = useState(false);
-  const [countries, setCountries] = useState<CardCountryOption[]>([]);
-  const [mccCodes, setMccCodes] = useState<MccCodeOption[]>([]);
   const [merchantCategories, setMerchantCategories] = useState<
     MerchantCategory[]
   >([]);
@@ -93,20 +91,14 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   // RULE MODES
   const [merchantCategoryMode, setMerchantCategoryMode] =
     useState<RuleMode>("OFF");
-  const [mccMode, setMccMode] = useState<RuleMode>("OFF");
   const [merchantMode, setMerchantMode] = useState<RuleMode>("OFF");
-  const [countryMode, setCountryMode] = useState<RuleMode>("OFF");
 
   // SELECTED VALUES
   const [selectedMerchantCategoryIds, setSelectedMerchantCategoryIds] =
     useState<string[]>([]);
-  const [selectedMccCodes, setSelectedMccCodes] = useState<string[]>([]);
-  const [selectedMerchantIds, setSelectedMerchantIds] = useState<string[]>(
-    []
-  );
-  const [selectedCountries, setSelectedCountries] = useState<string[]>(
-    []
-  );
+  const [selectedMerchantIds, setSelectedMerchantIds] = useState<
+    string[]
+  >([]);
 
   // MERCHANT SEARCH
   const [merchantSearchQuery, setMerchantSearchQuery] = useState("");
@@ -115,7 +107,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [merchantSearchCursor, setMerchantSearchCursor] = useState<
     string | null
   >(null);
-  const [merchantResults, setMerchantResults] = useState<Merchant[]>([]);
+  const [merchantResults, setMerchantResults] = useState<Merchant[]>(
+    []
+  );
 
   // ======================== COMMON HELPERS ========================
 
@@ -213,7 +207,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const loadData = async (
     accountId: number,
     pageIndex: number,
-    vaId?: number | null,
+    vaId: number,
     keyword?: string
   ) => {
     setFetching(true);
@@ -222,7 +216,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         accountId,
         pageIndex,
         pageSize,
-        vaId ?? undefined,
+        vaId,
         keyword
       );
 
@@ -256,7 +250,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   };
 
   useEffect(() => {
-    if (activeAccountId != null) {
+    if (activeAccountId != null && selectedVaId != null) {
+      // chỉ gọi khi đã chọn VA
       loadData(activeAccountId, page, selectedVaId, search);
     } else {
       setData([]);
@@ -267,19 +262,31 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (activeAccountId != null) {
-      setPage(0);
-      await loadData(activeAccountId, 0, selectedVaId, search);
+    if (activeAccountId == null) {
+      toast.error("No account selected");
+      return;
     }
+    if (selectedVaId == null) {
+      toast.error("Please select a virtual account");
+      return;
+    }
+    setPage(0);
+    await loadData(activeAccountId, 0, selectedVaId, search);
   };
 
   const handleSync = async () => {
     if (activeAccountId == null) return;
     setSyncing(true);
     try {
+      if (!selectedVaId) {
+        toast.error("Please select a virtual account to sync");
+        setSyncing(false);
+        return;
+      }
+
       await cardGroupApi.syncAccount(
         activeAccountId,
-        selectedVaId ?? undefined,
+        selectedVaId,
         undefined,
         search || undefined
       );
@@ -301,7 +308,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     try {
       await cardGroupApi.deleteCardGroup(id);
       toast.success("Delete card group successful");
-      if (activeAccountId != null) {
+      if (activeAccountId != null && selectedVaId != null) {
         await loadData(activeAccountId, page, selectedVaId, search);
       }
     } catch (err: any) {
@@ -367,8 +374,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
       toast.success("Create card group successful");
       setShowCreate(false);
-      setPage(0);
-      await loadData(activeAccountId, 0, selectedVaId, search);
+      if (selectedVaId != null) {
+        setPage(0);
+        await loadData(activeAccountId, 0, selectedVaId, search);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error(
@@ -419,10 +428,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       });
 
       toast.success("Update card group successful");
-      setShowEdit(false);
-      if (activeAccountId != null) {
+      if (activeAccountId != null && selectedVaId != null) {
         await loadData(activeAccountId, page, selectedVaId, search);
       }
+      setShowEdit(false);
     } catch (err: any) {
       console.error(err);
       toast.error(
@@ -439,14 +448,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     const loadMeta = async () => {
       try {
         setMetaLoading(true);
-        const [c, m, catRes] = await Promise.all([
-          cardMetaApi.getCountries(),
-          cardMetaApi.getMccCodes(),
-          merchantApi.getAllCategories(),
-        ]);
-
-        setCountries(c.sort((a, b) => a.code.localeCompare(b.code, "en-US")));
-        setMccCodes(m.sort((a, b) => a.code.localeCompare(b.code, "en-US")));
+        const catRes = await merchantApi.getAllCategories();
         setMerchantCategories(catRes);
       } catch (err) {
         console.error(err);
@@ -459,32 +461,33 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     loadMeta();
   }, [showLimits]);
 
-  // ======================== LIMITS MODAL: INIT FROM API ========================
+  // ======================== LIMITS MODAL: INIT FROM CARD GROUP DTO ========================
 
   const openLimitsModal = async (cg: CardGroup) => {
     setLimitsGroup(cg);
     setShowLimits(true);
     setInitialConstraint(null);
     setMerchantCategoryMode("OFF");
-    setMccMode("OFF");
     setMerchantMode("OFF");
-    setCountryMode("OFF");
     setSelectedMerchantCategoryIds([]);
-    setSelectedMccCodes([]);
     setSelectedMerchantIds([]);
-    setSelectedCountries([]);
     setMerchantSearchQuery("");
     setMerchantResults([]);
     setMerchantSearchCursor(null);
 
     try {
       setLimitsLoading(true);
-      // nếu bạn chưa có API này, tạo trong api.cardgroup.ts
-      const constraint =
-        (await cardGroupApi.getSpendingConstraint(
-          cg.id
-        )) as CardSpendingConstraintParam | null;
-      setInitialConstraint(constraint || null);
+
+      const constraint: CardGroupSpendingConstraintParam = {
+        merchantCategories: cg.merchantCategories ?? null,
+        merchantCategoryRestriction:
+          cg.merchantCategoryRestriction ?? null,
+        merchantIds: cg.merchantIds ?? null,
+        merchantNamesAllow: cg.merchantNamesAllow ?? null,
+        merchantRestriction: cg.merchantRestriction ?? null,
+      };
+
+      setInitialConstraint(constraint);
     } catch (err: any) {
       console.error(err);
       toast.error(
@@ -502,33 +505,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
     const c = initialConstraint;
 
-    // Countries
-    if (c && c.countries && c.countries.length > 0 && c.countryRestriction) {
-      setCountryMode(c.countryRestriction === "ALLOW" ? "ALLOWED" : "BLOCKED");
-      setSelectedCountries(c.countries);
-    } else {
-      setCountryMode("OFF");
-      setSelectedCountries([]);
-    }
-
-    // MCC codes
-    if (
-      c &&
-      c.merchantCategoryCodes &&
-      c.merchantCategoryCodes.length > 0 &&
-      c.merchantCategoryCodeRestriction
-    ) {
-      setMccMode(
-        c.merchantCategoryCodeRestriction === "ALLOW"
-          ? "ALLOWED"
-          : "BLOCKED"
-      );
-      setSelectedMccCodes(c.merchantCategoryCodes);
-    } else {
-      setMccMode("OFF");
-      setSelectedMccCodes([]);
-    }
-
     // Merchant categories
     if (
       c &&
@@ -537,7 +513,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       c.merchantCategoryRestriction
     ) {
       setMerchantCategoryMode(
-        c.merchantCategoryRestriction === "ALLOW"
+        c.merchantCategoryRestriction === "allowlist"
           ? "ALLOWED"
           : "BLOCKED"
       );
@@ -555,7 +531,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       c.merchantRestriction
     ) {
       setMerchantMode(
-        c.merchantRestriction === "ALLOW" ? "ALLOWED" : "BLOCKED"
+        c.merchantRestriction === "allowlist" ? "ALLOWED" : "BLOCKED"
       );
       setSelectedMerchantIds(c.merchantIds);
     } else {
@@ -605,8 +581,8 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // ======================== LIMITS MODAL: BUILD PAYLOAD ========================
 
-  const buildPayloadFromState = (): CardSpendingConstraintParam => {
-    const payload: CardSpendingConstraintParam = {};
+  const buildPayloadFromState = (): CardGroupSpendingConstraintParam => {
+    const payload: CardGroupSpendingConstraintParam = {};
 
     // Merchant categories
     if (
@@ -615,28 +591,14 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     ) {
       payload.merchantCategories = selectedMerchantCategoryIds;
       payload.merchantCategoryRestriction =
-        merchantCategoryMode === "ALLOWED" ? "ALLOW" : "DENY";
-    }
-
-    // MCC codes
-    if (mccMode !== "OFF" && selectedMccCodes.length > 0) {
-      payload.merchantCategoryCodes = selectedMccCodes;
-      payload.merchantCategoryCodeRestriction =
-        mccMode === "ALLOWED" ? "ALLOW" : "DENY";
+        merchantCategoryMode === "ALLOWED" ? "allowlist" : "denylist";
     }
 
     // Merchants
     if (merchantMode !== "OFF" && selectedMerchantIds.length > 0) {
       payload.merchantIds = selectedMerchantIds;
       payload.merchantRestriction =
-        merchantMode === "ALLOWED" ? "ALLOW" : "DENY";
-    }
-
-    // Countries
-    if (countryMode !== "OFF" && selectedCountries.length > 0) {
-      payload.countries = selectedCountries;
-      payload.countryRestriction =
-        countryMode === "ALLOWED" ? "ALLOW" : "DENY";
+        merchantMode === "ALLOWED" ? "allowlist" : "denylist";
     }
 
     return payload;
@@ -709,7 +671,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                 disabled={activeAccountId == null || loadingVa}
               >
                 <option value="">
-                  {loadingVa ? "Loading VAs..." : "All Virtual Accounts"}
+                  {loadingVa
+                    ? "Loading virtual accounts..."
+                    : "Select virtual account"}
                 </option>
                 {accountVirtualAccounts.map((va) => (
                   <option key={va.id} value={va.id}>
@@ -794,6 +758,15 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                         className="px-4 py-4 text-center text-xs text-slate-500"
                       >
                         Loading card groups...
+                      </td>
+                    </tr>
+                  ) : selectedVaId == null ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-4 py-7 text-center text-xs sm:text-sm text-slate-500"
+                      >
+                        Please select a virtual account
                       </td>
                     </tr>
                   ) : data.length === 0 ? (
@@ -946,302 +919,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
           </div>
         </div>
       </div>
-
-      {/* ======================== CREATE MODAL ======================== */}
-      {showCreate && (
-        <div className="fixed inset-0 z-[999] bg-black/40">
-          <div className="absolute left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden px-4 sm:px-0">
-            <div className="flex items-center justify-between px-5 py-4 bg-[#f5f7ff]">
-              <h2 className="text-base font-semibold text-slate-900">
-                Create Card Group
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowCreate(false)}
-                className="text-pink-500 text-xl leading-none hover:text-pink-600"
-              >
-                ×
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleCreateSubmit}
-              className="px-5 pb-5 pt-1 space-y-4"
-            >
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
-                  Virtual Account:
-                </label>
-                <select
-                  className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={createVaId ?? ""}
-                  onChange={(e) =>
-                    setCreateVaId(
-                      e.target.value ? Number(e.target.value) : null
-                    )
-                  }
-                >
-                  <option value="">Select VA</option>
-                  {accountVirtualAccounts.map((va) => (
-                    <option key={va.id} value={va.id}>
-                      {va.name || va.accountNumber || `VA #${va.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
-                  Name:
-                </label>
-                <input
-                  className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  placeholder="Name card group"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols gap-3">
-                {/* DAILY LIMIT */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Daily Limit (USD):
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={createDailyLimitUsdInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setCreateDailyLimitUsdInput(raw);
-
-                      const cleaned = raw.replace(/,/g, "");
-                      const num = parseFloat(cleaned);
-                      setCreateDailyLimitUsd(
-                        Number.isNaN(num) ? 0 : num
-                      );
-                    }}
-                    onBlur={() => {
-                      if (!createDailyLimitUsdInput) return;
-                      setCreateDailyLimitUsdInput(
-                        createDailyLimitUsd.toFixed(2)
-                      );
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                {/* MIN TXN */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Minimum Transaction (USD):
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={createMinTxnUsdInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setCreateMinTxnUsdInput(raw);
-
-                      const cleaned = raw.replace(/,/g, "");
-                      const num = parseFloat(cleaned);
-                      setCreateMinTxnUsd(Number.isNaN(num) ? 0 : num);
-                    }}
-                    onBlur={() => {
-                      if (!createMinTxnUsdInput) return;
-                      setCreateMinTxnUsdInput(
-                        createMinTxnUsd.toFixed(2)
-                      );
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                {/* MAX TXN */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Maximum Transaction (USD):
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={createMaxTxnUsdInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setCreateMaxTxnUsdInput(raw);
-
-                      const cleaned = raw.replace(/,/g, "");
-                      const num = parseFloat(cleaned);
-                      setCreateMaxTxnUsd(Number.isNaN(num) ? 0 : num);
-                    }}
-                    onBlur={() => {
-                      if (!createMaxTxnUsdInput) return;
-                      setCreateMaxTxnUsdInput(
-                        createMaxTxnUsd.toFixed(2)
-                      );
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
-                  Start Date:
-                </label>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={createStartDate}
-                  onChange={(e) => setCreateStartDate(e.target.value)}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={creating}
-                className="mt-3 mb-1 w-full rounded-xl bg-[#311BFF] py-2.5 text-sm font-semibold text-white shadow-md hover:bg-[#2612e8] disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ======================== EDIT MODAL ======================== */}
-      {showEdit && editingGroup && (
-        <div className="fixed inset-0 z-[999] bg-black/40">
-          <div className="absolute left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden px-4 sm:px-0">
-            <div className="flex items-center justify-between px-5 py-4 bg-[#f5f7ff]">
-              <h2 className="text-base font-semibold text-slate-900">
-                Edit Card Group
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowEdit(false)}
-                className="text-pink-500 text-xl leading-none hover:text-pink-600"
-              >
-                ×
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleEditSubmit}
-              className="px-5 pb-5 pt-1 space-y-4"
-            >
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
-                  Name:
-                </label>
-                <input
-                  className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols gap-3">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Daily Limit (USD):
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={editDailyLimitUsd}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const num = parseFloat(val);
-                      setEditDailyLimitUsd(
-                        Number.isNaN(num) ? 0 : num
-                      );
-                    }}
-                  />
-                </div>
-
-                {/* MIN */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Minimum Transaction (USD):
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={editMinTxnUsdInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setEditMinTxnUsdInput(raw);
-
-                      const cleaned = raw.replace(/,/g, "");
-                      const num = parseFloat(cleaned);
-                      setEditMinTxnUsd(Number.isNaN(num) ? 0 : num);
-                    }}
-                    onBlur={() => {
-                      if (!editMinTxnUsdInput) return;
-                      setEditMinTxnUsdInput(editMinTxnUsd.toFixed(2));
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                {/* MAX */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    Maximum Transaction (USD):
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    value={editMaxTxnUsdInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setEditMaxTxnUsdInput(raw);
-
-                      const cleaned = raw.replace(/,/g, "");
-                      const num = parseFloat(cleaned);
-                      setEditMaxTxnUsd(Number.isNaN(num) ? 0 : num);
-                    }}
-                    onBlur={() => {
-                      if (!editMaxTxnUsdInput) return;
-                      setEditMaxTxnUsdInput(editMaxTxnUsd.toFixed(2));
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
-                  Start Date:
-                </label>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-transparent bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={editStartDate}
-                  onChange={(e) => setEditStartDate(e.target.value)}
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="mt-3 mb-1 w-full rounded-xl bg-[#311BFF] py-2.5 text-sm font-semibold text-white shadow-md hover:bg-[#2612e8] disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Update
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      
 
       {/* ======================== LIMITS MODAL ======================== */}
       {showLimits && limitsGroup && (
@@ -1329,11 +1007,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                           </div>
                         ) : (
                           merchantCategories.map((cat) => {
-                            const id = String(cat.id);
+                            const id = cat.slashId; // dùng slashId cho Slash
                             const checked =
-                              selectedMerchantCategoryIds.includes(
-                                id
-                              );
+                              selectedMerchantCategoryIds.includes(id);
                             return (
                               <label
                                 key={id}
@@ -1352,87 +1028,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                                 />
                                 <span className="text-xs text-slate-800">
                                   {cat.name}
-                                </span>
-                              </label>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Allowed MCCs */}
-                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        Allowed MCCs
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Restrict spend by merchant category codes.
-                      </div>
-                    </div>
-                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
-                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
-                        (mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setMccMode(mode)}
-                            className={`px-3 py-1 rounded-full ${
-                              mccMode === mode
-                                ? mode === "OFF"
-                                  ? "bg-white text-slate-800 shadow-sm"
-                                  : mode === "ALLOWED"
-                                  ? "bg-emerald-500 text-white shadow-sm"
-                                  : "bg-red-500 text-white shadow-sm"
-                                : "text-slate-500"
-                            }`}
-                          >
-                            {mode === "OFF"
-                              ? "Off"
-                              : mode === "ALLOWED"
-                              ? "Allowed"
-                              : "Blocked"}
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  {mccMode !== "OFF" && (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <div className="text-[11px] text-slate-500 mb-2">
-                        Select MCC codes:
-                      </div>
-                      <div className="max-h-40 overflow-y-auto space-y-1 border border-slate-100 rounded-xl p-2">
-                        {mccCodes.length === 0 ? (
-                          <div className="text-xs text-slate-400">
-                            No MCC codes loaded.
-                          </div>
-                        ) : (
-                          mccCodes.map((mcc) => {
-                            const code = mcc.code;
-                            const checked =
-                              selectedMccCodes.includes(code);
-                            return (
-                              <label
-                                key={code}
-                                className="flex items-center gap-2 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-slate-300"
-                                  checked={checked}
-                                  onChange={() =>
-                                    setSelectedMccCodes((prev) =>
-                                      toggleStringInArray(prev, code)
-                                    )
-                                  }
-                                />
-                                <span className="text-xs text-slate-800">
-                                  {code} – {mcc.name}
                                 </span>
                               </label>
                             );
@@ -1508,7 +1103,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                           className="px-3 py-1.5 rounded-xl bg-indigo-500 text-white text-xs font-medium hover:bg-indigo-600"
                           disabled={merchantSearchLoading}
                         >
-                          {merchantSearchLoading ? "Searching..." : "Search"}
+                          {merchantSearchLoading
+                            ? "Searching..."
+                            : "Search"}
                         </button>
                       </div>
 
@@ -1538,7 +1135,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                                   }
                                 />
                                 <span className="text-xs text-slate-800">
-                                    {m.name}
+                                  {m.name}
                                 </span>
                               </label>
                             );
@@ -1556,88 +1153,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                           >
                             Load more…
                           </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Countries */}
-                <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        Countries
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Control which countries are allowed for card
-                        transactions.
-                      </div>
-                    </div>
-                    <div className="inline-flex text-[11px] bg-slate-100 rounded-full p-0.5">
-                      {(["OFF", "BLOCKED", "ALLOWED"] as RuleMode[]).map(
-                        (mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setCountryMode(mode)}
-                            className={`px-3 py-1 rounded-full ${
-                              countryMode === mode
-                                ? mode === "OFF"
-                                  ? "bg-white text-slate-800 shadow-sm"
-                                  : mode === "ALLOWED"
-                                  ? "bg-emerald-500 text-white shadow-sm"
-                                  : "bg-red-500 text-white shadow-sm"
-                                : "text-slate-500"
-                            }`}
-                          >
-                            {mode === "OFF"
-                              ? "Off"
-                              : mode === "ALLOWED"
-                              ? "Allowed"
-                              : "Blocked"}
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  {countryMode !== "OFF" && (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <div className="text-[11px] text-slate-500 mb-2">
-                        Select countries (ISO2):
-                      </div>
-                      <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1">
-                        {countries.length === 0 ? (
-                          <div className="text-xs text-slate-400">
-                            No countries loaded.
-                          </div>
-                        ) : (
-                          countries.map((c) => {
-                            const code = c.code;
-                            const checked =
-                              selectedCountries.includes(code);
-                            return (
-                              <label
-                                key={code}
-                                className="flex items-center gap-2 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-slate-300"
-                                  checked={checked}
-                                  onChange={() =>
-                                    setSelectedCountries((prev) =>
-                                      toggleStringInArray(prev, code)
-                                    )
-                                  }
-                                />
-                                <span className="text-xs text-slate-800">
-                                  {code} – {c.name}
-                                </span>
-                              </label>
-                            );
-                          })
                         )}
                       </div>
                     </div>

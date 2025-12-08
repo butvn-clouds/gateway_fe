@@ -41,10 +41,8 @@ export default function AccountManagement() {
 
   const [, setActiveMap] = useState<ActiveMap>({});
 
-  // state cho nút Copy
   const [copied, setCopied] = useState(false);
 
-  // ================== LOAD ACCOUNTS (PAGINATION) ==================
   const loadAccounts = async (pageParam = page, sizeParam = size) => {
     try {
       setLoading(true);
@@ -74,10 +72,8 @@ export default function AccountManagement() {
 
   useEffect(() => {
     loadAccounts(page, size);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, size]);
 
-  // ================== CREATE ==================
   const handleCreate = async (data: any) => {
     const payload: ApiCreateAccountParam = {
       name: (data.name || "").trim(),
@@ -106,7 +102,6 @@ export default function AccountManagement() {
     }
   };
 
-  // ================== UPDATE ==================
   const handleUpdate = async (data: any) => {
     if (!editingAccount) return;
 
@@ -132,7 +127,6 @@ export default function AccountManagement() {
     }
   };
 
-  // ================== DELETE ==================
   const handleDelete = async () => {
     if (deleteId == null) return;
     try {

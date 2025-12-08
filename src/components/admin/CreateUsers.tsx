@@ -42,7 +42,6 @@ export default function CreateUserAdmin() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
 
-  // ================== LOAD DATA ==================
   const loadUsers = async (pageNumber = 0) => {
     try {
       setLoading(true);
@@ -75,8 +74,6 @@ export default function CreateUserAdmin() {
     loadAccounts();
   }, [isAdmin]);
 
-  // ================== VIRTUAL ACCOUNT OPTIONS ==================
-  // Map: accountId -> list VA options
   const virtualAccountsByAccountId = useMemo(() => {
     const map: Record<number, { id: number; label: string }[]> = {};
     accounts.forEach((acc) => {
@@ -101,7 +98,6 @@ export default function CreateUserAdmin() {
     return Number.isNaN(n) ? [] : [n];
   };
 
-  // ================== ADD / UPDATE / DELETE ==================
 
   const handleAdd = async (data: any) => {
     const accountIds = toNumberArray(data.accountIds);
@@ -445,7 +441,6 @@ export default function CreateUserAdmin() {
                   type: "multiselect",
                   defaultValue: editingVirtualAccountIds,
                   dependsOn: "accountIds",
-                  // optionsFn: filter theo accountIds
                   optionsFn: (formValues: any) => {
                     const selectedAccountIds = toNumberArray(
                       formValues.accountIds

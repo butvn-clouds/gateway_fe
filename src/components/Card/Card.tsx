@@ -7,7 +7,7 @@ import {
   ApiUpdateCardParam,
   Card,
   CardCountryOption,
-  CardGroup,
+  CardsGroupsDTO,
   CardPage,
   MccCodeOption,
   Merchant,
@@ -55,7 +55,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [vaOptions, setVaOptions] = useState<VirtualAccount[]>([]);
   const [vaLoading, setVaLoading] = useState(false);
 
-  const [cardGroups, setCardGroups] = useState<CardGroup[]>([]);
+  const [cardGroups, setCardGroups] = useState<CardsGroupsDTO[]>([]);
   const [cardGroupLoading, setCardGroupLoading] = useState(false);
 
   const [metaLoading, setMetaLoading] = useState(false);
@@ -403,11 +403,26 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     merchantCategorySlashIds: string[]
   ): CardSpendingConstraintParam | null => {
     const constraint: CardSpendingConstraintParam = {
-      countryRestriction: false,
-      countries: false
+      merchantCategoryCodeRule: {
+        merchantCategoryCodes: [],
+        restriction: ""
+      },
+      spendingRule: undefined,
+      merchantRule: {
+        merchants: [],
+        restriction: ""
+      },
+      merchantCategoryRule: {
+        merchantCategories: [],
+        restriction: ""
+      },
+      countryRule: {
+        countries: [],
+        restriction: ""
+      }
     };
     let hasAny = false;
-
+    
     const isoCountries = (countriesAllow || [])
       .map((c) => c.trim().toUpperCase())
       .filter((c) => /^[A-Z]{2}$/.test(c));

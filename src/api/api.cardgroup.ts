@@ -10,52 +10,35 @@ import {
 
 export const cardGroupApi = {
   async getByAccountPaged(
-    accountId: number,
-    page: number,
-    size: number,
-    virtualAccountId?: number | null,
-    search?: string
-  ): Promise<CardGroupPage> {
-    const params: any = {
-      accountId,
-      page,
-      size,
-    };
-
-    if (virtualAccountId != null) params.virtualAccountId = virtualAccountId;
-    if (search && search.trim()) params.search = search.trim();
-
-    const { data } = await api.get<CardGroupPage>("/api/card-groups", {
-      params,
-    });
-    return data;
-  },
+  accountId: number,
+  page: number,
+  size: number,
+  virtualAccountId?: number,
+  search?: string
+) {
+  const params: any = { accountId, page, size };
+  if (virtualAccountId !== undefined) {
+    params.virtualAccountId = virtualAccountId;
+  }
+  if (search) params.search = search;
+  return api.get("/api/card-groups", { params }).then(res => res.data);
+},
 
   async syncAccount(
-    accountId: number,
-    virtualAccountId?: number | null,
-    cursor?: string | null,
-    filterName?: string | null
-  ) {
-    const payload = {
-      accountId,
-      virtualAccountId: virtualAccountId ?? null,
-      cursor: cursor ?? null,
-      filterName: filterName && filterName.trim() ? filterName.trim() : null,
-    };
-
-    const { data } = await api.post("/api/card-groups/sync", payload);
-    return data;
-  },
+   accountId: number
+     ): Promise<{ message: string; count: number }> {
+       const { data } = await api.post<{ message: string; count: number }>(
+         `/api/card-groups/sync/${accountId}`,
+         null
+       );
+       return data;
+     },
+   
 
   async createCardGroup(accountId: number, body: ApiCreateCardGroupParam) {
-    const { data } = await api.post(
-      `/api/card-groups`,
-      body,
-      {
-        params: { accountId },
-      }
-    );
+    const { data } = await api.post(`/api/card-groups`, body, {
+      params: { accountId },
+    });
     return data;
   },
 
@@ -97,7 +80,7 @@ export const cardGroupApi = {
     );
     return data;
   },
-  
+
   async setHiddenCardGroup(id: number, hidden: boolean): Promise<void> {
     const body: ApiUpdateVisibilityParam = { hidden };
     await api.patch(`/api/hidden/card-groups/${id}`, body);

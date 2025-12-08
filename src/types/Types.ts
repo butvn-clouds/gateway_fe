@@ -172,109 +172,212 @@ export interface VirtualAccountUpdateRequest {
 
 // ======================== CARD GROUP ========================
 
-export interface CardGroup {
+export interface CardGroupSpendingConstraintRequest {
+  countries?: string[] | null;
+  countryRestriction?: "ALLOW" | "DENY" | null;
+
+  merchantCategoryCodes?: string[] | null;
+  merchantCategoryCodeRestriction?: "ALLOW" | "DENY" | null;
+
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: "ALLOW" | "DENY" | null;
+
+  merchantCategories?: string[] | null; // slashId categories
+  merchantCategoryRestriction?: "ALLOW" | "DENY" | null;
+}
+
+export interface CardsGroupsDTO {
   id: number;
   slashId: string;
-
-  accountId: number | null;
-  virtualAccountId: number | null;
-  virtualAccountName?: string | null;
-
+  accountId: number;
+  accountName: string;
+  virtualAccountId: number;
+  virtualAccountName: string;
   name: string;
 
+  timezone?: string | null;
   dailyLimitCents?: number | null;
   minTransactionCents?: number | null;
   maxTransactionCents?: number | null;
-  startDate?: string | null; // yyyy-MM-dd
+  startDate?: string | null;
 
+  countriesAllow: string[];
+  mccCodesAllow: string[];
+  merchantIds: string[];
+  merchantCategories: string[];
+  merchantNamesAllow: string[];
+
+  countryRestriction: "ALLOW" | "DENY" | null;
+  merchantCategoryCodeRestriction: "ALLOW" | "DENY" | null;
+  merchantRestriction: "ALLOW" | "DENY" | null;
+  merchantCategoryRestriction: "ALLOW" | "DENY" | null;
+
+  utilizationLimitV2Json?: string | null;
   closed: boolean;
-
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CardGroupPage {
-  content: CardGroup[];
+  content: CardsGroupsDTO[];
   page: number;
   size: number;
   totalElements: number;
   totalPages: number;
 }
 
+/**
+ * FE gọi API create card group
+ * BE map sang CardGroupCreateRequest
+ */
+export type CardGroupRestrictionType = "ALLOW" | "DENY";
+
 export interface ApiCreateCardGroupParam {
   virtualAccountId: number;
   name: string;
 
+  timezone?: string | null;
   dailyLimitCents?: number | null;
+  startDate?: string | null; // yyyy-MM-dd
+
   minTransactionCents?: number | null;
   maxTransactionCents?: number | null;
-  startDate?: string | null;
-  timezone?: string | null;
-  preset?: string | null;
+
+  mccCodesAllow?: string[] | null;
+  merchantCategories?: string[] | null;
+  merchantCategoryRestriction?: CardGroupRestrictionType | null;
+
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: CardGroupRestrictionType | null;
+
+  utilizationLimitV2?: CardUtilizationLimitParam[] | null;
+
+  closed?: boolean | null;
 }
 
+/**
+ * FE gọi API update card group basic info (name, status, limits…)
+ * BE map sang CardGroupUpdateRequest
+ */
 export interface ApiUpdateCardGroupParam {
   name?: string;
 
+  timezone?: string | null;
   dailyLimitCents?: number | null;
+  startDate?: string | null;
+
   minTransactionCents?: number | null;
   maxTransactionCents?: number | null;
-  startDate?: string | null;
-  timezone?: string | null;
-  preset?: string | null;
+
+  mccCodesAllow?: string[] | null;
+  merchantCategories?: string[] | null;
+  merchantCategoryRestriction?: CardGroupRestrictionType | null;
+
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: CardGroupRestrictionType | null;
+
+  utilizationLimitV2?: CardUtilizationLimitParam[] | null;
+
+  closed?: boolean | null;
 }
 
+/**
+ * Nếu ông muốn dùng type “raw request” y như BE (tên giống Java)
+ * thì 2 cái dưới map thẳng sang:
+ * - CardGroupCreateRequest (Java)
+ * - CardGroupUpdateRequest (Java)
+ */
 export interface CardGroupCreateRequest {
   virtualAccountId: number;
   name: string;
 
+  timezone?: string | null;
   dailyLimitCents?: number | null;
+  startDate?: string | null;
+
   minTransactionCents?: number | null;
   maxTransactionCents?: number | null;
-  startDate?: string | null;
-  timezone?: string | null;
-  preset?: string | null;
+
+  mccCodesAllow?: string[] | null;
+  merchantCategories?: string[] | null;
+  merchantCategoryRestriction?: CardGroupRestrictionType | null;
+
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: CardGroupRestrictionType | null;
+
+  utilizationLimitV2?: CardUtilizationLimitParam[] | null;
+
+  closed?: boolean | null;
 }
 
 export interface CardGroupUpdateRequest {
   name?: string;
 
+  timezone?: string | null;
   dailyLimitCents?: number | null;
+  startDate?: string | null;
+
   minTransactionCents?: number | null;
   maxTransactionCents?: number | null;
-  startDate?: string | null;
-  timezone?: string | null;
-  preset?: string | null;
-}
 
-export type CardGroupRestrictionType = "allowlist" | "denylist";
-
-export interface CardGroupSpendingConstraintParam {
-  dailyLimitCents?: number | null;
-  minTransactionCents?: number | null;
-  maxTransactionCents?: number | null;
-  startDate?: string | null;
-  timezone?: string | null;
-  preset?: string | null;
-
-  merchantIds?: string[] | null;
-  merchantRestriction?: CardGroupRestrictionType | null;
-
-  countries?: string[] | null;
-  countryRestriction?: CardGroupRestrictionType | null;
-
-  // giá trị là slashId của MerchantCategory: "merchant_category_xxx"
+  mccCodesAllow?: string[] | null;
   merchantCategories?: string[] | null;
   merchantCategoryRestriction?: CardGroupRestrictionType | null;
 
-  merchantCategoryCodes?: string[] | null;
-  merchantCategoryCodeRestriction?: CardGroupRestrictionType | null;
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: CardGroupRestrictionType | null;
+
+  utilizationLimitV2?: CardUtilizationLimitParam[] | null;
+
+  closed?: boolean | null;
 }
 
+/**
+ * Body FE gửi khi update spending-constraint cho card group:
+ * map 1-1 sang CardGroupSpendingConstraintRequest ở BE
+ * (PATCH / PUT /card-groups/{id}/spending-constraint)
+ */
+export interface CardGroupSpendingConstraintParam {
+  timezone?: string | null;
+  dailyLimitCents?: number | null;
+  startDate?: string | null;
+
+  minTransactionCents?: number | null;
+  maxTransactionCents?: number | null;
+
+  mccCodesAllow?: string[] | null;
+  merchantCategories?: string[] | null;
+  merchantCategoryRestriction?: CardGroupRestrictionType | null;
+
+  merchantIds?: string[] | null;
+  merchantNamesAllow?: string[] | null;
+  merchantRestriction?: CardGroupRestrictionType | null;
+
+  utilizationLimitV2?: CardUtilizationLimitParam[] | null;
+}
+
+/**
+ * Map với CardGroupUtilizationDTO ở BE
+ * trả về từ GET /api/card-groups/{id}/utilization
+ */
 export interface CardGroupUtilization {
-  nextResetDate?: string | null;
-  spendAmountCents?: number | null;
-  availableBalanceCents?: number | null;
+  groupId: number;
+  slashId: string;
+
+  timezone?: string | null;
+  preset?: string | null;
+
+  limitAmountCents?: number | null;
+  utilizedAmountCents?: number | null;
+  remainingAmountCents?: number | null;
+
+  periodStartIso?: string | null;
+  periodEndIso?: string | null;
 }
 
 export interface CardGroupUtilizationPage {
@@ -376,6 +479,11 @@ export interface CardTransactionSizeLimitParam {
  * không bị lỗi TypeScript.
  */
 export interface CardSpendingConstraintParam {
+  merchantCategoryCodeRule: { merchantCategoryCodes: string[]; restriction: string; };
+  spendingRule: any;
+  merchantRule: { merchants: string[]; restriction: string; };
+  merchantCategoryRule: { merchantCategories: string[]; restriction: string; };
+  countryRule: { countries: string[]; restriction: string; };
   // Transaction size / utilization
   utilizationLimit?: CardUtilizationLimitParam | null;
   transactionSizeLimit?: CardTransactionSizeLimitParam | null;
