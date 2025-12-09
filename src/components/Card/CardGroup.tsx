@@ -9,6 +9,7 @@ import {
   MerchantCategory,
   MerchantSearchResponse,
   CardGroupSpendingConstraintParam,
+  CardGroupRestrictionType,
 } from "../../types/Types";
 import { cardGroupApi } from "../../api/api.cardgroup";
 import { virtualAccountApi } from "../../api/api.virtualaccout";
@@ -40,8 +41,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createVaId, setCreateVaId] = useState<number | null>(null);
-  const [createDailyLimitUsd, setCreateDailyLimitUsd] =
-    useState<number>(0);
+  const [createDailyLimitUsd, setCreateDailyLimitUsd] = useState<number>(0);
   const [createMinTxnUsd, setCreateMinTxnUsd] = useState<number>(0);
   const [createMaxTxnUsd, setCreateMaxTxnUsd] = useState<number>(0);
   const [createDailyLimitUsdInput, setCreateDailyLimitUsdInput] =
@@ -54,19 +54,16 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // EDIT BASIC
   const [showEdit, setShowEdit] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<CardGroup | null>(
+  const [editingGroup, setEditingGroup] = useState<CardsGroupsDTO | null>(
     null
   );
   const [editName, setEditName] = useState("");
-  const [editDailyLimitUsd, setEditDailyLimitUsd] =
-    useState<number>(0);
+  const [editDailyLimitUsd, setEditDailyLimitUsd] = useState<number>(0);
   const [editMinTxnUsd, setEditMinTxnUsd] = useState<number>(0);
   const [editMaxTxnUsd, setEditMaxTxnUsd] = useState<number>(0);
   const [editStartDate, setEditStartDate] = useState<string>("");
-  const [editMinTxnUsdInput, setEditMinTxnUsdInput] =
-    useState<string>("");
-  const [editMaxTxnUsdInput, setEditMaxTxnUsdInput] =
-    useState<string>("");
+  const [editMinTxnUsdInput, setEditMinTxnUsdInput] = useState<string>("");
+  const [editMaxTxnUsdInput, setEditMaxTxnUsdInput] = useState<string>("");
 
   // VIRTUAL ACCOUNTS
   const [accountVirtualAccounts, setAccountVirtualAccounts] = useState<
@@ -76,7 +73,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // ======================== LIMITS MODAL STATE ========================
   const [showLimits, setShowLimits] = useState(false);
-  const [limitsGroup, setLimitsGroup] = useState<CardGroup | null>(null);
+  const [limitsGroup, setLimitsGroup] = useState<CardsGroupsDTO | null>(
+    null
+  );
   const [limitsLoading, setLimitsLoading] = useState(false);
   const [limitsSaving, setLimitsSaving] = useState(false);
   const [initialConstraint, setInitialConstraint] =
@@ -96,9 +95,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   // SELECTED VALUES
   const [selectedMerchantCategoryIds, setSelectedMerchantCategoryIds] =
     useState<string[]>([]);
-  const [selectedMerchantIds, setSelectedMerchantIds] = useState<
-    string[]
-  >([]);
+  const [selectedMerchantIds, setSelectedMerchantIds] = useState<string[]>(
+    []
+  );
 
   // MERCHANT SEARCH
   const [merchantSearchQuery, setMerchantSearchQuery] = useState("");
@@ -107,9 +106,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const [merchantSearchCursor, setMerchantSearchCursor] = useState<
     string | null
   >(null);
-  const [merchantResults, setMerchantResults] = useState<Merchant[]>(
-    []
-  );
+  const [merchantResults, setMerchantResults] = useState<Merchant[]>([]);
 
   // ======================== COMMON HELPERS ========================
 
@@ -168,18 +165,18 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         setAccountVirtualAccounts(res.content || []);
 
         if (res.content && res.content.length === 1) {
-          setSelectedVaId(res.content[0].id);
           setCreateVaId(res.content[0].id);
-        } else {
-          setSelectedVaId(null);
+        } else if (
+          createVaId &&
+          !res.content.some((v: VirtualAccount) => v.id === createVaId)
+        ) {
           setCreateVaId(null);
         }
       } catch (err: any) {
         console.error(err);
         setAccountVirtualAccounts([]);
         toast.error(
-          err?.response?.data?.message ||
-            "Unable to load virtual accounts"
+          err?.response?.data?.message || "Unable to load virtual accounts"
         );
       } finally {
         setLoadingVa(false);
@@ -207,16 +204,21 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   const loadData = async (
     accountId: number,
     pageIndex: number,
-    vaId: number,
+    vaId?: number | null,
     keyword?: string
   ) => {
     setFetching(true);
     try {
+      const vaFilter =
+        typeof vaId === "number" && Number.isFinite(vaId)
+          ? vaId
+          : undefined;
+
       const res = await cardGroupApi.getByAccountPaged(
         accountId,
         pageIndex,
         pageSize,
-        vaId,
+        vaFilter,
         keyword
       );
 
@@ -250,8 +252,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
   };
 
   useEffect(() => {
-    if (activeAccountId != null && selectedVaId != null) {
-      // chỉ gọi khi đã chọn VA
+    if (activeAccountId != null) {
       loadData(activeAccountId, page, selectedVaId, search);
     } else {
       setData([]);
@@ -266,10 +267,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       toast.error("No account selected");
       return;
     }
-    if (selectedVaId == null) {
-      toast.error("Please select a virtual account");
-      return;
-    }
     setPage(0);
     await loadData(activeAccountId, 0, selectedVaId, search);
   };
@@ -278,18 +275,13 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     if (activeAccountId == null) return;
     setSyncing(true);
     try {
-      if (!selectedVaId) {
-        toast.error("Please select a virtual account to sync");
-        setSyncing(false);
-        return;
+      // Nếu user chọn VA thì sync theo VA, còn không thì sync theo account
+      if (selectedVaId) {
+        await cardGroupApi.syncByVirtualAccount(selectedVaId);
+      } else {
+        await cardGroupApi.syncAccount(activeAccountId);
       }
 
-      await cardGroupApi.syncAccount(
-        activeAccountId,
-        selectedVaId,
-        undefined,
-        search || undefined
-      );
       setPage(0);
       await loadData(activeAccountId, 0, selectedVaId, search);
       toast.success("Sync card groups successful");
@@ -308,7 +300,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     try {
       await cardGroupApi.deleteCardGroup(id);
       toast.success("Delete card group successful");
-      if (activeAccountId != null && selectedVaId != null) {
+      if (activeAccountId != null) {
         await loadData(activeAccountId, page, selectedVaId, search);
       }
     } catch (err: any) {
@@ -369,12 +361,11 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         maxTransactionCents: usdToCents(Number(createMaxTxnUsd) || 0),
         startDate: createStartDate || null,
         timezone: "UTC",
-        preset: "daily",
       });
 
       toast.success("Create card group successful");
       setShowCreate(false);
-      if (selectedVaId != null) {
+      if (activeAccountId != null) {
         setPage(0);
         await loadData(activeAccountId, 0, selectedVaId, search);
       }
@@ -390,7 +381,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // ======================== EDIT BASIC INFO ========================
 
-  const openEditModal = (cg: CardGroup) => {
+  const openEditModal = (cg: CardsGroupsDTO) => {
     setEditingGroup(cg);
     setEditName(cg.name ?? "");
 
@@ -424,11 +415,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
         maxTransactionCents: usdToCents(Number(editMaxTxnUsd) || 0),
         startDate: editStartDate || null,
         timezone: "UTC",
-        preset: "daily",
       });
 
       toast.success("Update card group successful");
-      if (activeAccountId != null && selectedVaId != null) {
+      if (activeAccountId != null) {
         await loadData(activeAccountId, page, selectedVaId, search);
       }
       setShowEdit(false);
@@ -463,7 +453,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // ======================== LIMITS MODAL: INIT FROM CARD GROUP DTO ========================
 
-  const openLimitsModal = async (cg: CardGroup) => {
+  const openLimitsModal = async (cg: CardsGroupsDTO) => {
     setLimitsGroup(cg);
     setShowLimits(true);
     setInitialConstraint(null);
@@ -481,10 +471,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       const constraint: CardGroupSpendingConstraintParam = {
         merchantCategories: cg.merchantCategories ?? null,
         merchantCategoryRestriction:
-          cg.merchantCategoryRestriction ?? null,
+          (cg.merchantCategoryRestriction as any) ?? null,
         merchantIds: cg.merchantIds ?? null,
         merchantNamesAllow: cg.merchantNamesAllow ?? null,
-        merchantRestriction: cg.merchantRestriction ?? null,
+        merchantRestriction: (cg.merchantRestriction as any) ?? null,
       };
 
       setInitialConstraint(constraint);
@@ -512,10 +502,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       c.merchantCategories.length > 0 &&
       c.merchantCategoryRestriction
     ) {
+      const r = c.merchantCategoryRestriction as CardGroupRestrictionType;
+
       setMerchantCategoryMode(
-        c.merchantCategoryRestriction === "allowlist"
-          ? "ALLOWED"
-          : "BLOCKED"
+        r === "allowlist" ? "ALLOWED" : "BLOCKED"
       );
       setSelectedMerchantCategoryIds(c.merchantCategories.map(String));
     } else {
@@ -530,9 +520,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       c.merchantIds.length > 0 &&
       c.merchantRestriction
     ) {
-      setMerchantMode(
-        c.merchantRestriction === "allowlist" ? "ALLOWED" : "BLOCKED"
-      );
+      const r = c.merchantRestriction as CardGroupRestrictionType;
+
+      setMerchantMode(r === "allowlist" ? "ALLOWED" : "BLOCKED");
       setSelectedMerchantIds(c.merchantIds);
     } else {
       setMerchantMode("OFF");
@@ -591,7 +581,9 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
     ) {
       payload.merchantCategories = selectedMerchantCategoryIds;
       payload.merchantCategoryRestriction =
-        merchantCategoryMode === "ALLOWED" ? "allowlist" : "denylist";
+        merchantCategoryMode === "ALLOWED"
+          ? "allowlist"
+          : "denylist";
     }
 
     // Merchants
@@ -612,6 +604,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
       await cardGroupApi.patchSpendingConstraint(limitsGroup.id, payload);
       toast.success("Saved card group limits successfully");
       setShowLimits(false);
+      // reload list cho chắc
+      if (activeAccountId != null) {
+        await loadData(activeAccountId, page, selectedVaId, search);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error(
@@ -625,7 +621,10 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
 
   // ======================== UTILS ========================
 
-  const findVaName = (id: number | null, cg?: CardGroup): string => {
+  const findVaName = (
+    id: number | null,
+    cg?: CardsGroupsDTO
+  ): string => {
     if (!user) return "-";
 
     if (cg && (cg as any).virtualAccountName) {
@@ -673,7 +672,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                 <option value="">
                   {loadingVa
                     ? "Loading virtual accounts..."
-                    : "Select virtual account"}
+                    : "Filter by virtual account (optional)"}
                 </option>
                 {accountVirtualAccounts.map((va) => (
                   <option key={va.id} value={va.id}>
@@ -758,15 +757,6 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                         className="px-4 py-4 text-center text-xs text-slate-500"
                       >
                         Loading card groups...
-                      </td>
-                    </tr>
-                  ) : selectedVaId == null ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-4 py-7 text-center text-xs sm:text-sm text-slate-500"
-                      >
-                        Please select a virtual account
                       </td>
                     </tr>
                   ) : data.length === 0 ? (
@@ -919,7 +909,275 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
           </div>
         </div>
       </div>
-      
+
+      {/* ======================== CREATE MODAL ======================== */}
+      {showCreate && (
+        <div className="fixed inset-0 z-[999] bg-black/40 flex items-center justify-center">
+          <div className="w-full max-w-lg rounded-3xl bg-white shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-900">
+                Create Card Group
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="text-slate-400 text-xl leading-none hover:text-slate-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit}>
+              <div className="px-6 py-4 space-y-4 text-sm">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Name
+                  </label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    placeholder="Card group name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Virtual Account
+                  </label>
+                  <select
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white"
+                    value={createVaId ?? ""}
+                    onChange={(e) =>
+                      setCreateVaId(
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                  >
+                    <option value="">Select a virtual account</option>
+                    {accountVirtualAccounts.map((va) => (
+                      <option key={va.id} value={va.id}>
+                        {va.name || va.accountNumber || `VA #${va.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Daily limit (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={createDailyLimitUsdInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCreateDailyLimitUsdInput(val);
+                        const num = parseFloat(val);
+                        setCreateDailyLimitUsd(
+                          Number.isFinite(num) ? num : 0
+                        );
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Min Txn (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={createMinTxnUsdInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCreateMinTxnUsdInput(val);
+                        const num = parseFloat(val);
+                        setCreateMinTxnUsd(
+                          Number.isFinite(num) ? num : 0
+                        );
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Max Txn (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={createMaxTxnUsdInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCreateMaxTxnUsdInput(val);
+                        const num = parseFloat(val);
+                        setCreateMaxTxnUsd(
+                          Number.isFinite(num) ? num : 0
+                        );
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Start date (yyyy-MM-dd)
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                    value={createStartDate}
+                    onChange={(e) => setCreateStartDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={() => setShowCreate(false)}
+                  disabled={creating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={creating}
+                >
+                  {creating ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================== EDIT MODAL ======================== */}
+      {showEdit && editingGroup && (
+        <div className="fixed inset-0 z-[999] bg-black/40 flex items-center justify-center">
+          <div className="w-full max-w-lg rounded-3xl bg-white shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-900">
+                Edit Card Group – {editingGroup.name ?? `#${editingGroup.id}`}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowEdit(false)}
+                className="text-slate-400 text-xl leading-none hover:text-slate-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
+              <div className="px-6 py-4 space-y-4 text-sm">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Name
+                  </label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Card group name"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Daily limit (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={editDailyLimitUsd}
+                      onChange={(e) => {
+                        const num = parseFloat(e.target.value);
+                        setEditDailyLimitUsd(
+                          Number.isFinite(num) ? num : 0
+                        );
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Min Txn (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={editMinTxnUsdInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditMinTxnUsdInput(val);
+                        const num = parseFloat(val);
+                        setEditMinTxnUsd(Number.isFinite(num) ? num : 0);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Max Txn (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                      value={editMaxTxnUsdInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditMaxTxnUsdInput(val);
+                        const num = parseFloat(val);
+                        setEditMaxTxnUsd(Number.isFinite(num) ? num : 0);
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Start date (yyyy-MM-dd)
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                    value={editStartDate || ""}
+                    onChange={(e) => setEditStartDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={() => setShowEdit(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  Save changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ======================== LIMITS MODAL ======================== */}
       {showLimits && limitsGroup && (
@@ -1007,7 +1265,7 @@ export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
                           </div>
                         ) : (
                           merchantCategories.map((cat) => {
-                            const id = cat.slashId; // dùng slashId cho Slash
+                            const id = cat.slashId;
                             const checked =
                               selectedMerchantCategoryIds.includes(id);
                             return (
