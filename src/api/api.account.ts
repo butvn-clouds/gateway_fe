@@ -11,7 +11,6 @@ export interface ApiUpdateAccountParam {
   apiKey?: string;
 }
 
-// Lấy toàn bộ accounts (kèm virtualAccounts)
 // export async function AccountGetAll(pageParam: number, sizeParam: number): Promise<Account[]> {
 //   const res = await api.get<{
 //     content: Account[];

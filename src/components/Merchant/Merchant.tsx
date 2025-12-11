@@ -1,4 +1,3 @@
-// src/components/MerchantPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContextProvider";
 import {
@@ -27,11 +26,9 @@ export const MerchantPages: React.FC = () => {
     return accounts.find((acc) => acc.id === activeAccountId) || null;
   }, [accounts, activeAccountId]);
 
-  // ====== CATEGORIES ======
   const [categories, setCategories] = useState<MerchantCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
 
-  // ====== MERCHANT SEARCH (Slash) ======
   const [searchText, setSearchText] = useState("");
   const [searching, setSearching] = useState(false);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
@@ -39,7 +36,7 @@ export const MerchantPages: React.FC = () => {
 
   const pageSize = 20;
   const [merchantPage, setMerchantPage] = useState(0);
-  const [hasSearched, setHasSearched] = useState(false); // 👈 đã từng bấm Search chưa
+  const [hasSearched, setHasSearched] = useState(false); 
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -74,7 +71,6 @@ export const MerchantPages: React.FC = () => {
 
     const keyword = searchText.trim();
     if (!keyword) {
-      // clear nếu user xoá keyword rồi bấm search
       setMerchants([]);
       setNextCursor(null);
       setMerchantPage(0);
@@ -109,7 +105,7 @@ export const MerchantPages: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setHasSearched(true); // 👈 đánh dấu đã search để show table
+    setHasSearched(true); 
     await doSearch();
   };
 
@@ -187,7 +183,6 @@ export const MerchantPages: React.FC = () => {
         </form>
       </div>
 
-      {/* 🔥 Merchant search result (HIỆN TRƯỚC, VÀ CHỈ KHI ĐÃ SEARCH) */}
       {hasSearched && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
@@ -303,7 +298,6 @@ export const MerchantPages: React.FC = () => {
         </div>
       )}
 
-      {/* Merchant Categories (DB) – ĐỂ SAU */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Merchant Categories

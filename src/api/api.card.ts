@@ -25,14 +25,10 @@ export interface GetPagedCardsParams {
   dir?: "asc" | "desc";
 }
 
-/**
- * Dùng cho /api/cards-visible (đã lọc ẩn theo VA / Card Group)
- * Về cơ bản giống GetPagedCardsParams, nên reuse luôn type cũ.
- */
+
 export type GetPagedVisibleCardsParams = GetPagedCardsParams;
 
 export const cardApi = {
-  // ==================== LIST GỐC (KHÔNG ÁP DỤNG ẨN) ====================
 
   async getPagedCards(params: GetPagedCardsParams): Promise<CardPage> {
     const query: any = {
@@ -64,12 +60,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== LIST ĐÃ LỌC ẨN (VISIBLE) ====================
-
-  /**
-   * Lấy danh sách card đã áp dụng rule ẩn theo VA / CardGroup của user hiện tại.
-   * BE: GET /api/cards-visible
-   */
   async getPagedCardsVisible(
     params: GetPagedVisibleCardsParams
   ): Promise<CardPage> {
@@ -108,7 +98,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== SYNC / CRUD ====================
 
   async syncFromSlash(
     accountId: number
@@ -140,7 +129,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== DETAIL / VAULT (GỐC) ====================
 
   async getSlashDetail(
     id: number,
@@ -177,12 +165,7 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== DETAIL / VAULT (ĐÃ LỌC ẨN) ====================
 
-  /**
-   * Lấy detail từ endpoint đã check ẩn:
-   * BE: GET /api/cards-visible/{id}/vault
-   */
   async getSlashDetailVisible(
     id: number,
     opts?: { includePan?: boolean; includeCvv?: boolean }
@@ -204,7 +187,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== UTILIZATION (GỐC) ====================
 
   async getUtilization(id: number): Promise<CardUtilization> {
     const { data } = await api.get<CardUtilization>(
@@ -213,12 +195,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== UTILIZATION (ĐÃ LỌC ẨN) ====================
-
-  /**
-   * Lấy utilization từ endpoint đã check ẩn:
-   * BE: GET /api/cards-visible/{id}/utilization
-   */
   async getUtilizationVisible(id: number): Promise<CardUtilization> {
     const { data } = await api.get<CardUtilization>(
       `/api/cards-visible/${id}/utilization`
@@ -226,7 +202,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== SPENDING CONSTRAINT ====================
 
   async patchSpendingConstraint(
     id: number,
@@ -250,7 +225,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== MODIFIERS ====================
 
   async getModifiers(id: number): Promise<CardModifiersResponse> {
     const { data } = await api.get<CardModifiersResponse>(
@@ -271,7 +245,6 @@ export const cardApi = {
     return data;
   },
 
-  // ==================== META ====================
 
   async getCountryOptions(): Promise<CardCountryOption[]> {
     const { data } = await api.get<CardCountryOption[]>("/api/meta/countries");

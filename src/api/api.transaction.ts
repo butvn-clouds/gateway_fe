@@ -1,29 +1,45 @@
-// import api from "../config/api.config";
-// import {
-//   TransactionListResponse,
-//   TransactionSearchParams,
-// } from "../types/Types";
+import api from "../config/api.config";
+import {
+  TransactionListParams,
+  TransactionListResponse,
+} from "../types/Types";
 
 
-// export const transactionApi = {
-//   async search(
-//     params: TransactionSearchParams
-//   ): Promise<TransactionListResponse> {
-//     const res = await api.get("/api/transactions/search", {
-//       params: {
-//         accountId: params.accountId,
-//         virtualAccountId: params.virtualAccountId,
-//         cardId: params.cardId,
-//         status: params.status,
-//         dateFrom: params.dateFrom,
-//         dateTo: params.dateTo,
-//         minAmountCents: params.minAmountCents,
-//         maxAmountCents: params.maxAmountCents,
-//         merchant: params.merchant,
-//         cursor: params.cursor,
-//         size: params.size,
-//       },
-//     });
-//     return res.data;
-//   },
-// };
+export const transactionApi = {
+  async list(params: TransactionListParams): Promise<TransactionListResponse> {
+    const {
+      accountId,
+      cursor,
+      virtualAccountId,
+      fromDate,
+      toDate,
+      fromAuthorizedAt,
+      toAuthorizedAt,
+      status,
+      detailedStatus,
+      cardId,
+      providerAuthorizationId,
+    } = params;
+
+    const res = await api.get<TransactionListResponse>(
+      `/api/transactions`,
+      {
+        params: {
+          accountId,
+          cursor,
+          virtualAccountId,
+          fromDate,
+          toDate,
+          fromAuthorizedAt,
+          toAuthorizedAt,
+          status,
+          detailedStatus,
+          cardId,
+          providerAuthorizationId,
+        },
+        withCredentials: true,
+      }
+    );
+    return res.data;
+  },
+};

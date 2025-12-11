@@ -1,556 +1,607 @@
-// // src/components/TransactionManager.tsx
-// import React, { useEffect, useMemo, useState } from "react";
-// import { toast } from "react-toastify";
+import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
+import { useAuth } from "../../context/AuthContextProvider";
+import {
+  Account,
+  VirtualAccount,
+  Transaction,
+} from "../../types/Types";
+import { virtualAccountApi } from "../../api/api.virtualaccout";
+import { transactionApi } from "../../api/api.transaction";
 
-// import { useAuth } from "../../context/AuthContextProvider";
-// import {
-//   Account,
-//   VirtualAccount,
-//   Card,
-//   CardPage,
-//   Transaction,
-//   TransactionListResponse,
-// } from "../../types/Types";
+interface Props {
+  compact?: boolean;
+}
 
-// import { virtualAccountApi } from "../../api/api.virtualaccout";
-// import { cardApi } from "../../api/api.card";
-// import { transactionApi } from "../../api/api.transaction";
+type StatusFilter = "all" | "pending" | "posted" | "failed";
+type DetailedStatusFilter =
+  | "all"
+  | "pending"
+  | "canceled"
+  | "failed"
+  | "settled"
+  | "declined"
+  | "refund"
+  | "reversed"
+  | "returned"
+  | "dispute";
 
-// interface Props {
-//   pageSize?: number;
-// }
+export const TransactionManager: React.FC<Props> = ({ compact }) => {
+  const { user, loading } = useAuth();
 
-// export const TransactionManager: React.FC<Props> = ({ pageSize = 100 }) => {
-//   const { user, loading: authLoading } = useAuth();
+  // ====== ACCOUNT / VA STATE ======
+  const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
 
-//   // ========== AUTH & ACTIVE ACCOUNT ==========
-//   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
+  const activeAccountId: number | null = useMemo(() => {
+    if (!user) return null;
+    if (user.activeAccount) return user.activeAccount.id;
+    if (accounts.length > 0) return accounts[0].id;
+    return null;
+  }, [user, accounts]);
 
-//   const activeAccountId: number | null = useMemo(() => {
-//     if (!accounts || accounts.length === 0) return null;
-//     if ((user as any)?.activeAccount && (user as any).activeAccount.id) {
-//       return (user as any).activeAccount.id;
-//     }
-//     return accounts[0].id;
-//   }, [accounts, user]);
+  const activeAccount: Account | null = useMemo(() => {
+    if (!activeAccountId) return null;
+    return accounts.find((acc) => acc.id === activeAccountId) || null;
+  }, [accounts, activeAccountId]);
 
-//   const activeAccount = useMemo(
-//     () => accounts.find((a) => a.id === activeAccountId) || null,
-//     [accounts, activeAccountId]
-//   );
+  const [accountVirtualAccounts, setAccountVirtualAccounts] = useState<
+    VirtualAccount[]
+  >([]);
+  const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
+  const [loadingVa, setLoadingVa] = useState(false);
 
-//   // ========== META: VA & CARD ==========
-//   const [vaOptions, setVaOptions] = useState<VirtualAccount[]>([]);
-//   const [vaLoading, setVaLoading] = useState(false);
+  // ====== TRANSACTION LIST STATE ======
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [count, setCount] = useState<number | undefined>();
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-//   const [cardOptions, setCardOptions] = useState<Card[]>([]);
-//   const [cardLoading, setCardLoading] = useState(false);
+  // Local search (client-side) theo description / merchantDescription / memo
+  const [search, setSearch] = useState("");
 
-//   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
-//   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
+  // Filter status
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [detailedStatusFilter, setDetailedStatusFilter] =
+    useState<DetailedStatusFilter>("all");
 
-//   // reset filter khi đổi account
-//   useEffect(() => {
-//     setSelectedVaId(null);
-//     setSelectedCardId(null);
-//   }, [activeAccountId]);
+  // Filter date (ngày post)
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
-//   // Load VA list by account
-//   useEffect(() => {
-//     const loadVas = async () => {
-//       if (!activeAccountId) {
-//         setVaOptions([]);
-//         return;
-//       }
-//       try {
-//         setVaLoading(true);
-//         const res = await virtualAccountApi.getByAccountPaged(
-//           activeAccountId,
-//           0,
-//           500,
-//           undefined
-//         );
-//         setVaOptions(res.content || []);
-//       } catch (err) {
-//         console.error(err);
-//         toast.error("Failed to load virtual accounts");
-//       } finally {
-//         setVaLoading(false);
-//       }
-//     };
-//     loadVas();
-//   }, [activeAccountId]);
+  // ====== HELPERS ======
+  const formatUsd = (cents?: number | null): string => {
+    if (cents == null) return "-";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  };
 
-//   // Load card list (filter by VA nếu chọn)
-//   useEffect(() => {
-//     const loadCards = async () => {
-//       if (!activeAccountId) {
-//         setCardOptions([]);
-//         return;
-//       }
-//       try {
-//         setCardLoading(true);
-//         const res: CardPage = await cardApi.getPagedCards({
-//           accountId: activeAccountId,
-//           virtualAccountId: selectedVaId ?? undefined,
-//           cardGroupId: undefined,
-//           page: 0,
-//           size: 500,
-//         });
-//         setCardOptions(res.content || []);
-//       } catch (err) {
-//         console.error(err);
-//         toast.error("Failed to load cards");
-//       } finally {
-//         setCardLoading(false);
-//       }
-//     };
-//     loadCards();
-//   }, [activeAccountId, selectedVaId]);
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+  };
 
-//   // ========== FILTERS ==========
-//   const [statusFilter, setStatusFilter] = useState<string>("");
-//   const [dateFrom, setDateFrom] = useState<string>("");
-//   const [dateTo, setDateTo] = useState<string>("");
-//   const [minAmount, setMinAmount] = useState<string>("");
-//   const [maxAmount, setMaxAmount] = useState<string>("");
-//   const [merchantSearch, setMerchantSearch] = useState<string>("");
+  const amountClass = (amountCents?: number | null) => {
+    if (amountCents == null) return "text-slate-700";
+    if (amountCents < 0) return "text-red-600";
+    if (amountCents > 0) return "text-emerald-600";
+    return "text-slate-700";
+  };
 
-//   // ========== TRANSACTIONS STATE (CURSOR-BASED) ==========
-//   const [transactions, setTransactions] = useState<Transaction[]>([]);
-//   const [nextCursor, setNextCursor] = useState<string | null>(null);
-//   const [loadingTx, setLoadingTx] = useState(false);
-//   const [initialLoaded, setInitialLoaded] = useState(false);
+  const statusBadgeClass = (status?: string | null) => {
+    const s = (status || "").toLowerCase();
+    if (s === "pending") {
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    }
+    if (s === "posted" || s === "settled") {
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    }
+    if (s === "failed" || s === "declined" || s === "canceled") {
+      return "bg-red-50 text-red-700 border-red-200";
+    }
+    return "bg-slate-50 text-slate-600 border-slate-200";
+  };
 
-//   const clearTransactions = () => {
-//     setTransactions([]);
-//     setNextCursor(null);
-//   };
+  const findVaName = (id: number | null): string => {
+    if (!user || !id) return "-";
+    const va =
+      accountVirtualAccounts.find((v) => v.id === id) ||
+      (user.virtualAccounts ?? []).find((v) => v.id === id);
+    return va?.name || va?.accountNumber || `VA #${id}`;
+  };
 
-//   const buildSearchParams = (cursor?: string | null) => {
-//     const va = vaOptions.find((v) => v.id === selectedVaId);
-//     const card = cardOptions.find((c) => c.id === selectedCardId);
+  const findVaSlashId = (id: number | null): string | undefined => {
+    if (!id) return undefined;
+    const va =
+      accountVirtualAccounts.find((v) => v.id === id) ||
+      (user?.virtualAccounts ?? []).find((v) => v.id === id);
+    return (va as any)?.slashId || undefined;
+  };
 
-//     const minAmountCents =
-//       minAmount.trim() !== "" ? Math.round(Number(minAmount) * 100) : undefined;
-//     const maxAmountCents =
-//       maxAmount.trim() !== "" ? Math.round(Number(maxAmount) * 100) : undefined;
+  // ======================== LOAD VAs THEO ACCOUNT ========================
+  useEffect(() => {
+    const fetchVAs = async () => {
+      if (!activeAccountId) {
+        setAccountVirtualAccounts([]);
+        setSelectedVaId(null);
+        return;
+      }
+      setLoadingVa(true);
+      try {
+        const res = await virtualAccountApi.getByAccountPaged(
+          activeAccountId,
+          0,
+          1000,
+          undefined
+        );
+        setAccountVirtualAccounts(res.content || []);
 
-//     return {
-//       accountId: activeAccountId!,
-//       virtualAccountId: va?.slashId,
-//       cardId: card?.slashId,
-//       status: statusFilter || undefined,
-//       dateFrom: dateFrom || undefined,
-//       dateTo: dateTo || undefined,
-//       minAmountCents:
-//         Number.isFinite(minAmountCents as any) && (minAmountCents as any) > 0
-//           ? minAmountCents
-//           : undefined,
-//       maxAmountCents:
-//         Number.isFinite(maxAmountCents as any) && (maxAmountCents as any) > 0
-//           ? maxAmountCents
-//           : undefined,
-//       merchant: merchantSearch.trim() || undefined,
-//       cursor: cursor ?? undefined,
-//       size: pageSize,
-//     };
-//   };
+        if (res.content && res.content.length === 1) {
+          setSelectedVaId(res.content[0].id);
+        } else if (
+          selectedVaId &&
+          !res.content.some((v: VirtualAccount) => v.id === selectedVaId)
+        ) {
+          setSelectedVaId(null);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setAccountVirtualAccounts([]);
+        toast.error(
+          err?.response?.data?.message || "Unable to load virtual accounts"
+        );
+      } finally {
+        setLoadingVa(false);
+      }
+    };
 
-//   const loadTransactions = async (cursor?: string | null, append = false) => {
-//     if (!activeAccountId) return;
-//     try {
-//       setLoadingTx(true);
-//       const params = buildSearchParams(cursor);
-//       const res: TransactionListResponse = await transactionApi.search(params);
+    fetchVAs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccountId]);
 
-//       setTransactions((prev) =>
-//         append ? [...prev, ...(res.items || [])] : res.items || []
-//       );
-//       setNextCursor(res.metadata?.nextCursor ?? null);
-//       setInitialLoaded(true);
-//     } catch (err) {
-//       console.error(err);
-//       toast.error("Failed to load transactions");
-//     } finally {
-//       setLoadingTx(false);
-//     }
-//   };
+  // ======================== LOAD TRANSACTIONS ========================
+  const loadTransactions = async (reset: boolean) => {
+    if (!activeAccountId) {
+      setTransactions([]);
+      setNextCursor(undefined);
+      setCount(undefined);
+      return;
+    }
 
-//   // load lần đầu + khi filter đổi (không dùng cursor cũ)
-//   useEffect(() => {
-//     if (!activeAccountId) return;
+    const vaSlashId = findVaSlashId(selectedVaId);
 
-//     clearTransactions();
-//     loadTransactions(null, false);
-//     // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, [
-//     activeAccountId,
-//     selectedVaId,
-//     selectedCardId,
-//     statusFilter,
-//     dateFrom,
-//     dateTo,
-//     minAmount,
-//     maxAmount,
-//     merchantSearch,
-//     pageSize,
-//   ]);
+    const params = {
+      accountId: activeAccountId,
+      cursor: reset ? undefined : nextCursor,
+      virtualAccountId: vaSlashId,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      detailedStatus:
+        detailedStatusFilter !== "all" ? detailedStatusFilter : undefined,
+    };
 
-//   const handleLoadMore = () => {
-//     if (!nextCursor || loadingTx) return;
-//     loadTransactions(nextCursor, true);
-//   };
+    try {
+      if (reset) {
+        setLoadingList(true);
+      } else {
+        setLoadingMore(true);
+      }
 
-//   const formatAmount = (cents?: number | null): string => {
-//     if (cents == null) return "-";
-//     const usd = cents / 100;
-//     return usd.toLocaleString(undefined, {
-//       minimumFractionDigits: 2,
-//       maximumFractionDigits: 2,
-//     });
-//   };
+      const res = await transactionApi.list(params);
 
-//   const formatDateTime = (iso?: string | null): string => {
-//     if (!iso) return "-";
-//     const d = new Date(iso);
-//     if (Number.isNaN(d.getTime())) return iso;
-//     return d.toLocaleString();
-//   };
+      if (reset) {
+        setTransactions(res.items || []);
+      } else {
+        setTransactions((prev) => [...prev, ...(res.items || [])]);
+      }
 
-//   const getVaLabel = (t: Transaction): string => {
-//     if (t.virtualAccountId) return t.virtualAccountId;
-//     const va = vaOptions.find((v) => v.slashId === t.virtualAccountId);
-//     return va?.name || va?.id?.toString() || "-";
-//   };
+      setNextCursor(res.nextCursor || undefined);
+      setCount(res.count ?? undefined);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message || "Unable to load transactions"
+      );
+    } finally {
+      setLoadingList(false);
+      setLoadingMore(false);
+    }
+  };
 
-//   const getCardLabel = (t: Transaction): string => {
-//     if (t.cardId) {
-//       const card = cardOptions.find((c) => c.slashId === t.cardId);
-//       if (card) return card.name || `**** ${card.last4 ?? ""}`;
-//     }
-//     return t.cardId || "-";
-//   };
+  // Auto load khi account / VA / filter đổi
+  useEffect(() => {
+    if (activeAccountId != null) {
+      loadTransactions(true);
+    } else {
+      setTransactions([]);
+      setNextCursor(undefined);
+      setCount(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccountId, selectedVaId, statusFilter, detailedStatusFilter, fromDate, toDate]);
 
-//   if (authLoading) {
-//     return (
-//       <div className="flex items-center justify-center h-64 text-slate-500">
-//         Loading authentication...
-//       </div>
-//     );
-//   }
+  // ======================== CLIENT-SIDE FILTER SEARCH ========================
+  const filteredTransactions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return transactions;
+    return transactions.filter((t) => {
+      const haystack =
+        [
+          t.description,
+          t.merchantDescription,
+          t.memo,
+          t.merchantData?.description,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase() || "";
+      return haystack.includes(q);
+    });
+  }, [transactions, search]);
 
-//   return (
-//     <div className="space-y-5">
-//       {/* HEADER + FILTERS GỘP 1 BLOCK */}
-//       <div className="rounded-2xl bg-white shadow-sm border border-slate-200/70 p-4 space-y-4">
-//         <div className="flex flex-wrap items-center justify-between gap-4">
-//           <div className="space-y-1">
-//             <div className="text-xs uppercase tracking-[0.16em] text-slate-500">
-//               Transactions
-//             </div>
-//             <div className="text-lg font-semibold text-slate-900">
-//               {activeAccount ? activeAccount.name : "No active account"}
-//             </div>
-//             <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-//               <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-full">
-//                 <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-//                 Virtual accounts: {vaLoading ? "..." : vaOptions.length || "0"}
-//               </span>
-//               <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-full">
-//                 <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-//                 Cards: {cardLoading ? "..." : cardOptions.length || "0"}
-//               </span>
-//               <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-full">
-//                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-//                 Loaded: {transactions.length}
-//               </span>
-//             </div>
-//           </div>
+  // ======================== RENDER ========================
+  if (loading) return <div>Check auth...</div>;
+  if (!user) return <div>Not logged in</div>;
 
-//           <div className="flex items-center gap-3">
-//             <button
-//               type="button"
-//               className="rounded-full bg-indigo-600 text-white px-5 py-1.5 text-sm font-medium shadow-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-//               disabled={!activeAccountId || loadingTx}
-//               onClick={() => {
-//                 clearTransactions();
-//                 loadTransactions(null, false);
-//               }}
-//             >
-//               🔄 Refresh
-//             </button>
-//           </div>
-//         </div>
+  return (
+    <div
+      className={`bg-gradient-to-b from-[#f5f7ff] to-white rounded-3xl border border-slate-200/70 shadow-sm ${
+        compact ? "p-4" : "p-6"
+      }`}
+    >
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div className="space-y-1">
+          <h2 className="text-base md:text-lg font-semibold text-slate-900 flex items-center gap-2">
+            Transaction Activity
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700 border border-indigo-100">
+              Live from Slash
+            </span>
+          </h2>
+          <p className="text-[11px] md:text-xs text-slate-500 max-w-xl">
+            View real-time transactions for your Slash account and virtual
+            accounts. Filter by status, date range, and quickly search by
+            description or merchant.
+          </p>
+        </div>
 
-//         {/* FILTERS */}
-//         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-//           {/* left filters */}
-//           <div className="flex flex-wrap items-center gap-3 text-sm">
-//             {/* VA */}
-//             <div className="flex items-center gap-2">
-//               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-//                 Virtual account
-//               </span>
-//               <select
-//                 className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={selectedVaId ?? ""}
-//                 onChange={(e) =>
-//                   setSelectedVaId(
-//                     e.target.value ? Number(e.target.value) : null
-//                   )
-//                 }
-//               >
-//                 <option value="">All VAs</option>
-//                 {vaOptions.map((va) => (
-//                   <option key={va.id} value={va.id}>
-//                     {va.name || va.slashId || va.id}
-//                   </option>
-//                 ))}
-//               </select>
-//             </div>
+        <div className="flex flex-col items-end gap-1 text-right">
+          <div className="text-xs text-slate-500">
+            Account:{" "}
+            <span className="font-semibold text-slate-900">
+              {activeAccount ? activeAccount.name : "No account selected"}
+            </span>
+          </div>
+          {typeof count === "number" && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-slate-900 text-white px-3 py-1 text-[11px]">
+              <span className="opacity-80">Total</span>
+              <span className="font-semibold">{count}</span>
+              <span className="opacity-80">transactions</span>
+            </div>
+          )}
+        </div>
+      </div>
 
-//             {/* Card */}
-//             <div className="flex items-center gap-2">
-//               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-//                 Card
-//               </span>
-//               <select
-//                 className="border border-slate-200 rounded-full px-3 py-1 min-w-[160px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={selectedCardId ?? ""}
-//                 onChange={(e) =>
-//                   setSelectedCardId(
-//                     e.target.value ? Number(e.target.value) : null
-//                   )
-//                 }
-//               >
-//                 <option value="">All cards</option>
-//                 {cardOptions.map((c) => (
-//                   <option key={c.id} value={c.id}>
-//                     {c.name || `**** ${c.last4 ?? ""}` || c.id}
-//                   </option>
-//                 ))}
-//               </select>
-//             </div>
+      {/* Filters row */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        {/* VA filter */}
+        <select
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200 min-w-[180px]"
+          value={selectedVaId ?? ""}
+          onChange={(e) =>
+            setSelectedVaId(e.target.value ? Number(e.target.value) : null)
+          }
+          disabled={activeAccountId == null || loadingVa}
+        >
+          <option value="">
+            {loadingVa ? "Loading virtual accounts..." : "All Virtual Accounts"}
+          </option>
+          {accountVirtualAccounts.map((va) => (
+            <option key={va.id} value={va.id}>
+              {va.name || va.accountNumber || `VA #${va.id}`}
+            </option>
+          ))}
+        </select>
 
-//             {/* Status */}
-//             <div className="flex items-center gap-2">
-//               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-//                 Status
-//               </span>
-//               <select
-//                 className="border border-slate-200 rounded-full px-3 py-1 min-w-[140px] bg-slate-50 text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={statusFilter}
-//                 onChange={(e) => setStatusFilter(e.target.value)}
-//               >
-//                 <option value="">All</option>
-//                 <option value="pending">Pending</option>
-//                 <option value="posted">Posted</option>
-//                 <option value="declined">Declined</option>
-//               </select>
-//             </div>
-//           </div>
+        {/* Status */}
+        <div className="inline-flex rounded-2xl bg-slate-100/80 p-0.5 text-[11px]">
+          {(["all", "pending", "posted", "failed"] as StatusFilter[]).map(
+            (s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1 rounded-2xl font-medium capitalize ${
+                  statusFilter === s
+                    ? "bg-white shadow-sm text-slate-900"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {s === "all" ? "All status" : s}
+              </button>
+            )
+          )}
+        </div>
 
-//           {/* right filters */}
-//           <div className="flex flex-wrap items-center gap-3 text-sm">
-//             {/* Date range */}
-//             <div className="flex items-center gap-2">
-//               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-//                 Date
-//               </span>
-//               <input
-//                 type="date"
-//                 className="border border-slate-200 rounded-full px-3 py-1 bg-slate-50 text-slate-800 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={dateFrom}
-//                 onChange={(e) => setDateFrom(e.target.value)}
-//               />
-//               <span className="text-slate-400 text-xs">–</span>
-//               <input
-//                 type="date"
-//                 className="border border-slate-200 rounded-full px-3 py-1 bg-slate-50 text-slate-800 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={dateTo}
-//                 onChange={(e) => setDateTo(e.target.value)}
-//               />
-//             </div>
+        {/* Detailed status */}
+        <select
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          value={detailedStatusFilter}
+          onChange={(e) =>
+            setDetailedStatusFilter(e.target.value as DetailedStatusFilter)
+          }
+        >
+          <option value="all">All detailed statuses</option>
+          <option value="pending">Pending</option>
+          <option value="settled">Settled</option>
+          <option value="declined">Declined</option>
+          <option value="failed">Failed</option>
+          <option value="canceled">Canceled</option>
+          <option value="refund">Refund</option>
+          <option value="reversed">Reversed</option>
+          <option value="returned">Returned</option>
+          <option value="dispute">Dispute</option>
+        </select>
 
-//             {/* Amount range */}
-//             <div className="flex items-center gap-2">
-//               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
-//                 Amount (USD)
-//               </span>
-//               <input
-//                 type="number"
-//                 placeholder="Min"
-//                 className="border border-slate-200 rounded-full px-3 py-1 w-20 bg-slate-50 text-slate-800 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={minAmount}
-//                 onChange={(e) => setMinAmount(e.target.value)}
-//               />
-//               <span className="text-slate-400 text-xs">–</span>
-//               <input
-//                 type="number"
-//                 placeholder="Max"
-//                 className="border border-slate-200 rounded-full px-3 py-1 w-20 bg-slate-50 text-slate-800 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 value={maxAmount}
-//                 onChange={(e) => setMaxAmount(e.target.value)}
-//               />
-//             </div>
+        {/* Date range */}
+        <div className="flex items-center gap-2 text-[11px]">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500">From</span>
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500">To</span>
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+        </div>
 
-//             {/* Merchant search */}
-//             <div className="relative">
-//               <input
-//                 className="border border-slate-200 rounded-full pl-8 pr-3 py-1.5 text-xs min-w-[180px] bg-slate-50 text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-//                 placeholder="Merchant search..."
-//                 value={merchantSearch}
-//                 onChange={(e) => setMerchantSearch(e.target.value)}
-//               />
-//               <span className="absolute left-2 top-1.5 text-slate-400 text-xs">
-//                 🔍
-//               </span>
-//             </div>
-//           </div>
-//         </div>
-//       </div>
+        {/* Search box */}
+        <div className="ml-auto flex items-center gap-0">
+          <input
+            className="rounded-l-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            placeholder="Search description or merchant..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button
+            type="button"
+            className="rounded-r-2xl border border-l-0 border-slate-200 bg-slate-900 px-3 py-1.5 text-xs sm:text-sm text-white hover:bg-slate-800"
+            onClick={() => loadTransactions(true)}
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
 
-//       {/* TABLE */}
-//       <div className="border border-slate-200/70 rounded-2xl overflow-hidden bg-white shadow-sm">
-//         <table className="w-full text-sm">
-//           <thead className="bg-slate-50/90 text-slate-600 border-b border-slate-200/80">
-//             <tr>
-//               <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wide">
-//                 Date
-//               </th>
-//               <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wide">
-//                 Merchant / Description
-//               </th>
-//               <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wide">
-//                 VA
-//               </th>
-//               <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wide">
-//                 Card
-//               </th>
-//               <th className="px-3 py-3 text-right font-semibold text-xs uppercase tracking-wide">
-//                 Amount (USD)
-//               </th>
-//               <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wide">
-//                 Status
-//               </th>
-//             </tr>
-//           </thead>
-//           <tbody>
-//             {loadingTx && !initialLoaded ? (
-//               <tr>
-//                 <td
-//                   colSpan={6}
-//                   className="px-4 py-8 text-center text-slate-500 text-sm"
-//                 >
-//                   <div className="flex flex-col items-center gap-2">
-//                     <span className="inline-block h-5 w-5 border-[3px] border-slate-400 border-t-transparent rounded-full animate-spin" />
-//                     <span>Loading transactions...</span>
-//                   </div>
-//                 </td>
-//               </tr>
-//             ) : transactions.length === 0 ? (
-//               <tr>
-//                 <td
-//                   colSpan={6}
-//                   className="px-4 py-8 text-center text-slate-500 text-sm"
-//                 >
-//                   No transactions found
-//                 </td>
-//               </tr>
-//             ) : (
-//               transactions.map((t, idx) => (
-//                 <tr
-//                   key={t.id + "-" + idx}
-//                   className={`border-t border-slate-100/80 transition hover:bg-indigo-50/40 ${
-//                     idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"
-//                   }`}
-//                 >
-//                   <td className="px-3 py-2 text-slate-800 whitespace-nowrap text-xs md:text-sm">
-//                     {formatDateTime(t.date)}
-//                   </td>
-//                   <td className="px-3 py-2 text-slate-800 text-xs md:text-sm">
-//                     <div className="flex flex-col gap-[2px]">
-//                       <span className="font-medium truncate max-w-[260px]">
-//                         {t.merchantDescription || t.description || "-"}
-//                       </span>
-//                       {t.memo && (
-//                         <span className="text-[11px] text-slate-500 truncate max-w-[260px]">
-//                           {t.memo}
-//                         </span>
-//                       )}
-//                     </div>
-//                   </td>
-//                   <td className="px-3 py-2 text-slate-800 text-xs md:text-sm">
-//                     {getVaLabel(t)}
-//                   </td>
-//                   <td className="px-3 py-2 text-slate-800 text-xs md:text-sm">
-//                     {getCardLabel(t)}
-//                   </td>
-//                   <td className="px-3 py-2 text-right text-xs md:text-sm">
-//                     <span
-//                       className={`inline-flex items-center px-2 py-[2px] rounded-full text-[11px] font-semibold ${
-//                         (t.amountCents ?? 0) < 0
-//                           ? "bg-emerald-50 text-emerald-700"
-//                           : "bg-rose-50 text-rose-700"
-//                       }`}
-//                     >
-//                       {t.amountCents != null && t.amountCents !== 0
-//                         ? (t.amountCents ?? 0) < 0
-//                           ? "-" + formatAmount(Math.abs(t.amountCents))
-//                           : "+" + formatAmount(t.amountCents)
-//                         : formatAmount(t.amountCents)}
-//                     </span>
-//                   </td>
-//                   <td className="px-3 py-2 text-xs md:text-sm">
-//                     <span
-//                       className={`inline-flex px-2 py-[2px] rounded-full text-[11px] font-medium ${
-//                         t.status === "pending"
-//                           ? "bg-amber-50 text-amber-700"
-//                           : t.status === "posted"
-//                           ? "bg-emerald-50 text-emerald-700"
-//                           : t.status === "declined"
-//                           ? "bg-rose-50 text-rose-700"
-//                           : "bg-slate-50 text-slate-600"
-//                       }`}
-//                     >
-//                       {t.status || "Unknown"}
-//                     </span>
-//                   </td>
-//                 </tr>
-//               ))
-//             )}
-//           </tbody>
-//         </table>
-//       </div>
+      {/* Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/70">
+        <div className="max-w-full overflow-x-auto">
+          <table className="min-w-full text-xs sm:text-sm">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200/80">
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Date
+                </th>
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Description / Merchant
+                </th>
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Virtual Account
+                </th>
+                <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Amount
+                </th>
+                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Original
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loadingList ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-6 text-center text-xs text-slate-500"
+                  >
+                    Loading transactions...
+                  </td>
+                </tr>
+              ) : filteredTransactions.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-6 text-center text-xs sm:text-sm text-slate-500"
+                  >
+                    No transactions found with current filters
+                  </td>
+                </tr>
+              ) : (
+                filteredTransactions.map((t) => {
+                  const vaName =
+                    t.virtualAccountId && selectedVaId
+                      ? findVaName(selectedVaId)
+                      : "-";
 
-//       {/* LOAD MORE */}
-//       <div className="flex items-center justify-between text-xs md:text-sm text-slate-600">
-//         <span>
-//           Loaded{" "}
-//           <span className="font-semibold">{transactions.length}</span>{" "}
-//           transaction(s)
-//         </span>
-//         <div className="flex items-center gap-2">
-//           {nextCursor && (
-//             <button
-//               className="border px-3 py-1 rounded-full bg-white hover:bg-slate-50 disabled:opacity-40 text-xs md:text-sm transition flex items-center gap-1"
-//               disabled={loadingTx}
-//               onClick={handleLoadMore}
-//             >
-//               {loadingTx && (
-//                 <span className="inline-block h-3 w-3 border-[2px] border-slate-400 border-t-transparent rounded-full animate-spin" />
-//               )}
-//               Load more
-//             </button>
-//           )}
-//           {!nextCursor && initialLoaded && (
-//             <span className="text-[11px] text-slate-400">
-//               No more transactions
-//             </span>
-//           )}
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
+                  const merchantTitle =
+                    t.merchantDescription ||
+                    t.merchantData?.description ||
+                    "—";
+
+                  const subLine =
+                    t.memo ||
+                    [
+                      t.merchantData?.location?.city,
+                      t.merchantData?.location?.country,
+                    ]
+                      .filter(Boolean)
+                      .join(", ");
+
+                  return (
+                    <tr
+                      key={t.id}
+                      className="bg-white hover:bg-indigo-50/60 transition-colors"
+                    >
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs sm:text-sm font-medium text-slate-900">
+                            {formatDate(t.date)}
+                          </span>
+                          {t.authorizedAt && (
+                            <span className="text-[10px] text-slate-400">
+                              Auth: {formatDate(t.authorizedAt)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-1">
+                            {t.description || merchantTitle || "—"}
+                          </span>
+                          {merchantTitle && (
+                            <span className="text-[11px] text-slate-600 line-clamp-1">
+                              {merchantTitle}
+                            </span>
+                          )}
+                          {subLine && (
+                            <span className="text-[10px] text-slate-400 line-clamp-1">
+                              {subLine}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="text-xs sm:text-sm text-slate-900">
+                          {vaName}
+                        </div>
+                        {t.cardId && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Card: {t.cardId}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center align-top">
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(
+                              t.status
+                            )}`}
+                          >
+                            {t.status || "unknown"}
+                          </span>
+                          {t.detailedStatus && t.detailedStatus !== t.status && (
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wide">
+                              {t.detailedStatus}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right align-top">
+                        <span
+                          className={`text-xs sm:text-sm font-semibold ${amountClass(
+                            t.amountCents
+                          )}`}
+                        >
+                          {formatUsd(t.amountCents)}
+                        </span>
+                        {t.feeInfo?.relatedTransaction && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Fee:{" "}
+                            {formatUsd(
+                              t.feeInfo.relatedTransaction.amount ?? undefined
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right align-top">
+                        {t.originalCurrency?.code ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-[11px] text-slate-700">
+                              {t.originalCurrency.code}{" "}
+                              {formatUsd(
+                                t.originalCurrency.amountCents ?? undefined
+                              )}
+                            </span>
+                            {typeof t.originalCurrency.conversionRate ===
+                              "number" && (
+                              <span className="text-[10px] text-slate-400">
+                                FX: {t.originalCurrency.conversionRate}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer / pagination */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 bg-white/80 px-4 py-3">
+          <p className="text-[11px] sm:text-xs text-slate-500">
+            Showing{" "}
+            <span className="font-semibold text-slate-800">
+              {filteredTransactions.length}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-slate-800">
+              {typeof count === "number" ? count : "—"}
+            </span>{" "}
+            transactions (client-side search applied)
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-3 py-1.5 text-xs rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100 disabled:bg-transparent transition"
+              onClick={() => loadTransactions(true)}
+              disabled={loadingList}
+            >
+              {loadingList ? "Refreshing..." : "Reload"}
+            </button>
+            <button
+              type="button"
+              className="px-4 py-1.5 text-xs rounded-full bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
+              onClick={() => loadTransactions(false)}
+              disabled={!nextCursor || loadingMore}
+            >
+              {loadingMore
+                ? "Loading more..."
+                : nextCursor
+                ? "Load more"
+                : "No more"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

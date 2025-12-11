@@ -1,4 +1,3 @@
-// src/components/VirtualAccountManager.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContextProvider";
 import { VirtualAccount } from "../../types/Types";
@@ -55,7 +54,6 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     return Math.round(percent * 100);
   };
 
-  // ====== AUTO CHỌN ACCOUNT ACTIVE ======
   useEffect(() => {
     if (loading) return;
 
@@ -77,7 +75,6 @@ export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
     }
   }, [loading, user?.activeAccount?.id, accounts, selectedAccountId]);
 
-  // ====== LOAD DATA TỪ BE ======
 const loadData = async (accountId: number, pageIndex: number) => {
   setFetching(true);
   try {
@@ -88,11 +85,10 @@ const loadData = async (accountId: number, pageIndex: number) => {
       undefined
     );
 
-    // 🔥 sort lại cho VA mới (id lớn hơn) nằm trên cùng
     const sorted = [...(res.content ?? [])].sort((a, b) => {
       const ida = a.id ?? 0;
       const idb = b.id ?? 0;
-      return idb - ida; // DESC
+      return idb - ida;
     });
 
     setData(sorted);
@@ -125,10 +121,8 @@ const loadData = async (accountId: number, pageIndex: number) => {
     } else {
       setData([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId, page]);
 
-  // ====== SYNC TỪ SLASH / BE ======
   const handleSync = async () => {
     if (selectedAccountId == null) return;
     setSyncing(true);
@@ -146,7 +140,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
     }
   };
 
-  // ====== DELETE ======
   const handleDelete = async (id: number) => {
     if (!window.confirm("Delete this virtual account permanently?")) return;
     try {
@@ -169,7 +162,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
     }
   };
 
-  // ============ CREATE MODAL ============
 
   const openCreateModal = () => {
     setCreateName("");
@@ -218,7 +210,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
     }
   };
 
-  // ============ EDIT MODAL ============
 
   const openEditModal = (va: VirtualAccount) => {
     setEditingVa(va);
@@ -266,7 +257,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
     <>
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
         <div className="space-y-4">
-          {/* Header / controls */}
           <div className="flex flex-wrap items-center gap-3 justify-between mb-2">
             <div className="text-sm text-gray-600" />
 
@@ -284,12 +274,11 @@ const loadData = async (accountId: number, pageIndex: number) => {
                 onClick={handleSync}
                 disabled={syncing || selectedAccountId == null}
               >
-                {syncing ? "Syncing..." : "Sync Virtual Accounts"}
+                {syncing ? "Refreshing..." : "🔄 Refresh"}
               </button>
             </div>
           </div>
 
-          {/* Table */}
           <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
             <div className="max-w-full overflow-x-auto">
               <table className="min-w-full text-xs sm:text-sm">
@@ -462,7 +451,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
         </div>
       </div>
 
-      {/* CREATE MODAL */}
       {showCreate && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden">
@@ -539,7 +527,6 @@ const loadData = async (accountId: number, pageIndex: number) => {
         </div>
       )}
 
-      {/* EDIT MODAL */}
       {showEdit && editingVa && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-3xl bg-[#f5f7ff] shadow-xl overflow-hidden">

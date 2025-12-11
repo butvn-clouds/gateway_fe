@@ -4,7 +4,6 @@ import {
   VirtualAccountPage,
   ApiCreateVirtualAccountParam,
   ApiUpdateVirtualAccountParam,
-  ApiUpdateVisibilityParam,
 } from "../types/Types";
 
 export const virtualAccountApi = {
@@ -73,22 +72,5 @@ export const virtualAccountApi = {
 
   async deleteVirtualAccount(id: number): Promise<void> {
     await api.delete(`/api/virtual-accounts/${id}`);
-  },
-  async setHiddenVirtualAccount(
-    id: number,
-    hidden: boolean
-  ): Promise<void> {
-    const body: ApiUpdateVisibilityParam = { hidden };
-    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
-  },
-
-  async hideVirtualAccount(id: number): Promise<void> {
-    const body: ApiUpdateVisibilityParam = { hidden: true };
-    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
-  },
-
-  async unhideVirtualAccount(id: number): Promise<void> {
-    const body: ApiUpdateVisibilityParam = { hidden: false };
-    await api.patch(`/api/hidden/virtual-accounts/${id}`, body);
   },
 };

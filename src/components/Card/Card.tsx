@@ -7,7 +7,7 @@ import {
   ApiUpdateCardParam,
   Card,
   CardCountryOption,
-  CardsGroupsDTO,
+  CardGroup,
   CardPage,
   MccCodeOption,
   Merchant,
@@ -55,7 +55,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [vaOptions, setVaOptions] = useState<VirtualAccount[]>([]);
   const [vaLoading, setVaLoading] = useState(false);
 
-  const [cardGroups, setCardGroups] = useState<CardsGroupsDTO[]>([]);
+  const [cardGroups, setCardGroups] = useState<CardGroup[]>([]);
   const [cardGroupLoading, setCardGroupLoading] = useState(false);
 
   const [metaLoading, setMetaLoading] = useState(false);
@@ -405,20 +405,20 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
     const constraint: CardSpendingConstraintParam = {
       merchantCategoryCodeRule: {
         merchantCategoryCodes: [],
-        restriction: ""
+        restriction: undefined
       },
       spendingRule: undefined,
       merchantRule: {
         merchants: [],
-        restriction: ""
+        restriction: undefined
       },
       merchantCategoryRule: {
         merchantCategories: [],
-        restriction: ""
+        restriction: undefined
       },
       countryRule: {
         countries: [],
-        restriction: ""
+        restriction: undefined
       }
     };
     let hasAny = false;
@@ -639,13 +639,15 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
   };
 
   const formatAmount = (cents?: number | null): string => {
-    if (cents == null) return "-";
-    const usd = cents / 100;
-    return usd.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
+  if (cents == null) return "-";
+
+  return (cents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+};
 
   const renderCodeList = (
     codes: string[] | undefined | null,
@@ -767,9 +769,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
   return (
     <div className="space-y-5">
-      {/* HEADER + FILTER TRONG 1 CARD */}
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200/70 px-4 py-4 space-y-4">
-        {/* HÀNG 1: SUMMARY + ACTIONS */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">
@@ -811,10 +811,8 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
           </div>
         </div>
 
-        {/* HÀNG 2: FILTER BAR */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            {/* Group filter */}
             <div className="flex items-center gap-2">
               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
                 Group
@@ -837,7 +835,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </select>
             </div>
 
-            {/* Virtual account filter */}
             <div className="flex items-center gap-2">
               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
                 Virtual account
@@ -860,7 +857,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </select>
             </div>
 
-            {/* Status filter */}
             <div className="flex items-center gap-2">
               <span className="font-medium text-slate-700 text-xs uppercase tracking-wide">
                 Status
@@ -1138,7 +1134,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* BASIC INFO + LIMITS */}
               <div className="grid md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
                   <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
@@ -1172,9 +1167,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* RULES SECTION */}
               <div className="grid md:grid-cols-3 gap-4 text-sm">
-                {/* Countries allow */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Countries allow
@@ -1208,7 +1201,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 </div>
 
-                {/* MCC codes allow */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     MCC codes allow
@@ -1241,7 +1233,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 </div>
 
-                {/* Merchant categories */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Merchant categories allow
@@ -1271,7 +1262,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* MERCHANT RULES */}
               <div className="space-y-2 text-sm rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                 <div className="font-semibold text-slate-700 text-xs uppercase tracking-wide">
                   Merchants allow
@@ -1397,7 +1387,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         </div>
       )}
 
-      {/* EDIT MODAL */}
       {editingCard && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto space-y-4 border border-slate-200">
@@ -1420,7 +1409,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
             </div>
 
             <form onSubmit={handleSubmitEdit} className="space-y-5">
-              {/* name + status + limits */}
               <div className="grid md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
                   <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wide">
@@ -1468,9 +1456,7 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* RULES */}
               <div className="grid md:grid-cols-3 gap-4 text-sm">
-                {/* Countries */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Countries allow
@@ -1500,7 +1486,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 </div>
 
-                {/* MCC */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     MCC codes allow
@@ -1529,7 +1514,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </div>
                 </div>
 
-                {/* Merchant categories */}
                 <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                   <div className="font-semibold mb-1 text-slate-700 text-xs uppercase tracking-wide">
                     Merchant categories allow
@@ -1559,7 +1543,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* MERCHANT RULES EDIT */}
               <div className="space-y-2 text-sm rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
                 <div className="font-semibold text-slate-700 text-xs uppercase tracking-wide">
                   Merchants allow
@@ -1686,11 +1669,9 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
         </div>
       )}
 
-      {/* DETAIL MODAL */}
       {detailCard && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-slate-50 rounded-2xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto border border-slate-200">
-            {/* HEADER */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
@@ -1714,7 +1695,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </button>
             </div>
 
-            {/* TEXT INFO */}
             <div className="space-y-1 text-sm text-slate-800 mb-4">
               <p>
                 <span className="font-semibold">Status: </span>
@@ -1743,7 +1723,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </p>
                 )}
 
-              {/* CVV + VERIFY */}
               <div className="flex flex-col gap-1 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">CVV:</span>
@@ -1842,7 +1821,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
             </div>
 
             <div className="grid md:grid-cols-2 h-[190px] gap-4 mb-5">
-              {/* FRONT */}
               <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white px-5 py-4">
                 <div className="flex justify-between items-start mb-6">
                   <div></div>
@@ -1880,7 +1858,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
                 </div>
               </div>
 
-              {/* BACK */}
               <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white px-5 py-4">
                 <div className="h-8 bg-black/60 -mx-5 mb-4" />
 
@@ -1906,7 +1883,6 @@ export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
               </div>
             </div>
 
-            {/* LIMITS + RULES */}
             <hr className="my-4 border-slate-200" />
 
             <div className="space-y-2 text-sm text-slate-800">

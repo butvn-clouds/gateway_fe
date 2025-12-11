@@ -1,4 +1,3 @@
-// src/components/common/AddEditModal.tsx
 import React, { useEffect, useState } from "react";
 
 type FieldType = "text" | "password" | "select" | "multiselect";
@@ -15,9 +14,7 @@ export interface FieldConfig {
   placeholder?: string;
   defaultValue?: any;
   options?: Option[];
-  // tên field mà nó phụ thuộc (VD virtualAccountIds phụ thuộc accountIds)
   dependsOn?: string;
-  // build options động từ formData hiện tại
   optionsFn?: (formValues: Record<string, any>) => Option[];
 }
 
@@ -65,7 +62,6 @@ const AddEditModal: React.FC<AddEditModalProps> = ({
     setFormValues((prev) => {
       const next = { ...prev, [name]: value };
 
-      // nếu đổi accountIds -> clear virtualAccountIds để tránh lệch
       if (name === "accountIds") {
         next["virtualAccountIds"] = [];
       }
@@ -88,7 +84,6 @@ const AddEditModal: React.FC<AddEditModalProps> = ({
   const renderField = (field: FieldConfig) => {
     const value = formValues[field.name];
 
-    // options: ưu tiên optionsFn (dynamic), sau đó tới options static
     const options: Option[] = field.optionsFn
       ? field.optionsFn(formValues) || []
       : field.options || [];
