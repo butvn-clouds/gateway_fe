@@ -12,6 +12,7 @@ import VAPage from "./pages/VA/VAPage";
 import CardGroupPage from "./pages/Cards/CardGroupPage";
 import MerchantPage from "./pages/Merchant/MerchantPage";
 import CardPage from "./pages/Cards/CardPage";
+import { TransactionManager } from "./components/Transaction/Transaction";
 
 export default function App() {
   return (
@@ -24,7 +25,7 @@ export default function App() {
         {/* Private routes */}
         <Route element={<PrivateRoute />}>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<Home />} />
+            {/* <Route path="/" element={<Home />} /> */}
             <Route path="/admin" element={<DashboardPage />} />
             <Route path="/admin/users" element={<UserPage />} />
             <Route path="/admin/account" element={<AccountPage />} />
@@ -32,7 +33,7 @@ export default function App() {
             <Route path="/card-group" element={<CardGroupPage />} />
             <Route path="/merchant" element={<MerchantPage />} />
             <Route path="/card" element={<CardPage />} />
-            {/* <Route path="/" element={<TransactionManager />} /> */}
+            <Route path="/" element={<TransactionManager />} />
           </Route>
         </Route>
 

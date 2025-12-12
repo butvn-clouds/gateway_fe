@@ -481,123 +481,100 @@ export interface MccCodeOptionDTO {
   name: string;
 }
 
-export interface TransactionLocation {
-  city?: string | null;
-  state?: string | null;
-  country?: string | null;
-  zip?: string | null;
+// ======================== TRANSACTIONS ========================
+
+export interface MerchantLocation {
+  city?: string;
+  state?: string;
+  country?: string;
+  zip?: string;
 }
 
-export interface TransactionMerchantData {
-  description?: string | null;
-  categoryCode?: string | null;
-  location?: TransactionLocation | null;
+export interface MerchantData {
+  description?: string;
+  categoryCode?: string;
+  location?: MerchantLocation;
 }
 
-export interface TransactionOriginalCurrency {
-  code?: string | null;
+export interface OriginalCurrency {
+  code?: string;
   amountCents?: number | null;
   conversionRate?: number | null;
 }
 
-export interface TransactionWireInfo {
-  typeCode?: string | null;
-  subtypeCode?: string | null;
-  omad?: string | null;
-  imad?: string | null;
-  senderReference?: string | null;
-  businessFunctionCode?: string | null;
-  counterpartyBank?: string | null;
+export interface WireInfo {
+  typeCode?: string;
+  subtypeCode?: string;
+  omad?: string;
+  imad?: string;
+  senderReference?: string;
+  businessFunctionCode?: string;
+  counterpartyBank?: string;
 }
 
-export interface TransactionAchInfo {
-  receiverId?: string | null;
-  companyId?: string | null;
-  companyDiscretionaryData?: string | null;
-  traceNumber?: string | null;
-  entryClassCode?: string | null;
-  paymentRelatedInfo?: string | null;
-  counterpartyBank?: string | null;
-  companyEntryDescription?: string | null;
+export interface AchInfo {
+  receiverId?: string;
+  companyId?: string;
+  companyDiscretionaryData?: string;
+  traceNumber?: string;
+  entryClassCode?: string;
+  paymentRelatedInfo?: string;
+  counterpartyBank?: string;
+  companyEntryDescription?: string;
 }
 
-export interface TransactionRtpInfo {
-  counterpartyBank?: string | null;
-  endToEndId?: string | null;
-  routingNumber?: string | null;
-  originatorName?: string | null;
-  description?: string | null;
+export interface RtpInfo {
+  counterpartyBank?: string;
+  endToEndId?: string;
+  routingNumber?: string;
+  originatorName?: string;
+  description?: string;
 }
 
-export interface TransactionRelatedTransaction {
-  id?: string | null;
+export interface FeeRelatedTransaction {
+  id?: string;
   amount?: number | null;
 }
 
-export interface TransactionFeeInfo {
-  relatedTransaction?: TransactionRelatedTransaction | null;
+export interface FeeInfo {
+  relatedTransaction?: FeeRelatedTransaction | null;
 }
 
-export interface TransactionCryptoInfo {
-  txHash?: string | null;
-  senderAddress?: string | null;
+export interface CryptoInfo {
+  txHash?: string;
+  senderAddress?: string;
 }
 
 export interface Transaction {
   id: string;
-  date?: string | null;
-  description?: string | null;
+  date?: string;
+  description?: string;
   amountCents?: number | null;
-  status?: "pending" | "posted" | "failed" | string;
-  detailedStatus?:
-    | "pending"
-    | "canceled"
-    | "failed"
-    | "settled"
-    | "declined"
-    | "refund"
-    | "reversed"
-    | "returned"
-    | "dispute"
-    | string;
-  accountId?: string | null;
-  accountSubtype?: string | null;
-  memo?: string | null;
-  merchantDescription?: string | null;
-  merchantData?: TransactionMerchantData | null;
-  virtualAccountId?: string | null;
-  cardId?: string | null;
-  originalCurrency?: TransactionOriginalCurrency | null;
-  orderId?: string | null;
-  referenceNumber?: string | null;
-  authorizedAt?: string | null;
-  declineReason?: string | null;
-  approvalReason?: string | null;
-  providerAuthorizationId?: string | null;
-  wireInfo?: TransactionWireInfo | null;
-  achInfo?: TransactionAchInfo | null;
-  rtpInfo?: TransactionRtpInfo | null;
-  feeInfo?: TransactionFeeInfo | null;
-  cryptoInfo?: TransactionCryptoInfo | null;
+  status?: string;
+  detailedStatus?: string;
+  accountId?: string;
+  accountSubtype?: string;
+  memo?: string;
+  merchantDescription?: string;
+  merchantData?: MerchantData | null;
+  virtualAccountId?: string;
+  cardId?: string;
+  originalCurrency?: OriginalCurrency | null;
+  orderId?: string;
+  referenceNumber?: string;
+  authorizedAt?: string;
+  declineReason?: string;
+  approvalReason?: string;
+  providerAuthorizationId?: string;
+  wireInfo?: WireInfo | null;
+  achInfo?: AchInfo | null;
+  rtpInfo?: RtpInfo | null;
+  feeInfo?: FeeInfo | null;
+  cryptoInfo?: CryptoInfo | null;
 }
 
 export interface TransactionListResponse {
   items: Transaction[];
   nextCursor?: string | null;
   count?: number | null;
-}
-
-// Query params FE -> BE (/api/transactions)
-export interface TransactionListParams {
-  accountId: number;
-  cursor?: string;
-  virtualAccountId?: string;   // Slash VA id
-  fromDate?: string;
-  toDate?: string;
-  fromAuthorizedAt?: string;
-  toAuthorizedAt?: string;
-  status?: string;
-  detailedStatus?: string;
-  cardId?: string;
-  providerAuthorizationId?: string;
 }
