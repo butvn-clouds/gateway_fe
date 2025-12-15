@@ -1,35 +1,27 @@
 import api from "../config/api.config";
-import {
-  TransactionListResponse
-} from "../types/Types";
 
-export interface TransactionSearchParam {
-  accountId: number;
-  virtualAccountId?: string | null;
+export type TxSearchRequest = {
   cursor?: string | null;
-
-  fromDate?: string | null;
-  toDate?: string | null;
-
-  fromAuthorizedAt?: string | null;
-  toAuthorizedAt?: string | null;
-
-  status?: string | null;
-  detailedStatus?: string | null;
+  limit?: number;
+  virtualAccountId?: string | null;
   cardId?: string | null;
-  providerAuthorizationId?: string | null;
+  status?: string | null;
+};
 
-  search?: string | null; // keyword filter
-}
+export type TxSearchResponse = {
+  items: Record<string, any>[];
+  metadata: { nextCursor?: string | null; count?: number };
+  fromCache?: boolean;
+  cacheAgeSeconds?: number;
+};
 
 export const transactionApi = {
-  search: async (params: TransactionSearchParam): Promise<TransactionListResponse> => {
-    const res = await api.post("/api/transactions/search", params);
+  search: async (payload: TxSearchRequest) => {
+    const res = await api.post<TxSearchResponse>("/api/transactions/search", payload);
     return res.data;
   },
-
-  list: async (params: TransactionSearchParam): Promise<TransactionListResponse> => {
-    const res = await api.post("/api/transactions/list", params);
+  sync: async (payload: TxSearchRequest) => {
+    const res = await api.post<TxSearchResponse>("/api/transactions/sync", payload);
     return res.data;
   },
 };

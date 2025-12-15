@@ -12,7 +12,7 @@ import VAPage from "./pages/VA/VAPage";
 import CardGroupPage from "./pages/Cards/CardGroupPage";
 import MerchantPage from "./pages/Merchant/MerchantPage";
 import CardPage from "./pages/Cards/CardPage";
-import { TransactionManager } from "./components/Transaction/Transaction";
+import  TransactionManager from "./components/Transaction/Transaction";
 
 export default function App() {
   return (

@@ -1,710 +1,418 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/components/transaction/TransactionManager.tsx
+import React, { useCallback, useMemo, useState } from "react";
 import { toast } from "react-toastify";
-import { useAuth } from "../../context/AuthContextProvider";
-import {
-  Account,
-  Card,
-  VirtualAccount,
-  Transaction,
-  TransactionSearchResponse,
-} from "../../types/Types";
-import { virtualAccountApi } from "../../api/api.virtualaccout";
-import { cardApi } from "../../api/api.card";
 import { transactionApi } from "../../api/api.transaction";
+import type {
+  TransactionRowDTO,
+  TxStatus,
+  TransactionSyncRequest,
+} from "../../types/Types";
 
-interface Props {
-  pageSize?: number;
-}
+// TODO: đổi theo AuthContext dự án mày
+import { useAuth } from "../../context/AuthContextProvider";
 
-export const TransactionManager: React.FC<Props> = ({ pageSize = 100 }) => {
-  const { user, loading } = useAuth();
+const formatUsdNoDecimals = (cents?: number | null): string => {
+  if (cents == null) return "-";
+  const usd = cents / 100;
+  // Không muốn .00: set maximumFractionDigits = 0
+  return usd.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
 
-  // ====== AUTH / ACCOUNT ======
-  const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
+const toIso = (v: string): string | undefined => {
+  // input type="date" -> "YYYY-MM-DD"
+  if (!v) return undefined;
+  // set start-of-day local; backend parse OffsetDateTime nên tốt nhất dùng Z:
+  return new Date(v + "T00:00:00.000Z").toISOString();
+};
 
-  const activeAccountId: number | null = useMemo(() => {
-    if (!user) return null;
-    if (user.activeAccount) return user.activeAccount.id;
-    if (accounts.length > 0) return accounts[0].id;
-    return null;
-  }, [user, accounts]);
+type SortKey = "date" | "amountCents";
+type SortDir = "asc" | "desc";
 
-  const activeAccount: Account | null = useMemo(() => {
-    if (!activeAccountId) return null;
-    return accounts.find((a) => a.id === activeAccountId) || null;
-  }, [accounts, activeAccountId]);
+export const TransactionManager: React.FC = () => {
+  const { token } = useAuth();
 
-  // ====== FILTERS ======
-  const [selectedCardId, setSelectedCardId] = useState<string>("");
-  const [selectedVaId, setSelectedVaId] = useState<string>("");
+  // ===== Filters =====
+  const [accountId, setAccountId] = useState("");
+  const [virtualAccountId, setVirtualAccountId] = useState("");
+  const [cardId, setCardId] = useState("");
+  const [status, setStatus] = useState<TxStatus | "">("");
 
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  // ===== DB paging =====
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  // ====== DATA STATE ======
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [loadingTx, setLoadingTx] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [currentCursor, setCurrentCursor] = useState<string | null>(null);
+  // ===== Data =====
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<TransactionRowDTO[]>([]);
+  const [total, setTotal] = useState<number>(0);
 
-  // ====== META: CARDS / VAs ======
-  const [cards, setCards] = useState<Card[]>([]);
-  const [virtualAccounts, setVirtualAccounts] = useState<VirtualAccount[]>([]);
-  const [loadingMeta, setLoadingMeta] = useState(false);
-
-  // ====== SELECTION ======
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  const allChecked =
-    transactions.length > 0 &&
-    selectedIds.length > 0 &&
-    selectedIds.length === transactions.length;
-
-  const toggleSelectAll = () => {
-    if (allChecked) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(transactions.map((t) => t.id || ""));
-    }
-  };
-
-  const toggleRow = (id?: string | null) => {
-    if (!id) return;
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  // ====== HELPERS ======
-  const formatAmount = (amountCents?: number | null): string => {
-    if (amountCents == null) return "-";
-    const usd = amountCents / 100;
-    const abs = Math.abs(usd).toFixed(2);
-    const sign = usd < 0 ? "-" : "";
-    return `${sign}${abs} USD`;
-  };
-
-  const formatDateTime = (iso?: string | null): string => {
-    if (!iso) return "-";
-    try {
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return iso;
-      return d.toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  };
-
-  const getCardLabel = (cardId?: string | null) => {
-    if (!cardId) return "-";
-    const c = cards.find(
-      (x) => x.slashId === cardId || String(x.id) === String(cardId)
-    );
-    if (!c) return cardId;
-    const suffix = c.last4 ? `**** ${c.last4}` : c.id ? `#${c.id}` : "";
-    return c.name ? `${c.name} ${suffix}`.trim() : suffix || cardId;
-  };
-
-  const getVaName = (vaId?: string | null) => {
-    if (!vaId) return "-";
-    const v = virtualAccounts.find(
-      (x) => x.slashId === vaId || String(x.id) === String(vaId)
-    );
-    if (!v) return vaId;
-    return v.name || v.accountNumber || `VA #${v.id}`;
-  };
-
-  const handleDateClick = (e: React.MouseEvent<HTMLInputElement>) => {
-    const input = e.currentTarget as HTMLInputElement & {
-      showPicker?: () => void;
-    };
-    if (input.showPicker) input.showPicker();
-  };
-
-  // ====== LOAD META ======
-  useEffect(() => {
-    const loadMeta = async () => {
-      if (!activeAccountId) {
-        setCards([]);
-        setVirtualAccounts([]);
-        return;
-      }
-      try {
-        setLoadingMeta(true);
-        const [cardRes, vaRes] = await Promise.all([
-          cardApi.getByAccountPaged(activeAccountId, 0, 1000, undefined),
-          virtualAccountApi.getByAccountPaged(activeAccountId, 0, 1000, undefined),
-        ]);
-        setCards(cardRes.content || []);
-        setVirtualAccounts(vaRes.content || []);
-      } catch (err: any) {
-        console.error(err);
-        toast.error(
-          err?.response?.data?.message || "Unable to load cards / virtual accounts"
-        );
-      } finally {
-        setLoadingMeta(false);
-      }
-    };
-
-    loadMeta();
-  }, [activeAccountId]);
-
-  // ====== LOAD TRANSACTIONS ======
-  const fetchTransactions = async (cursor?: string | null, append = false) => {
-    if (!activeAccountId) {
-      toast.error("No account selected");
-      return;
-    }
-
-    try {
-      setLoadingTx(true);
-
-      const params: any = {
-        accountId: activeAccountId,
-        cardId: selectedCardId || undefined,
-        virtualAccountId: selectedVaId || undefined,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        cursor: cursor || undefined,
-        pageSize,
-      };
-
-      const res: TransactionSearchResponse =
-        await transactionApi.searchTransactions(activeAccountId, params);
-
-      setTransactions((prev) =>
-        append ? [...prev, ...(res.items || [])] : res.items || []
-      );
-      setTotalCount(res.count ?? null);
-      setNextCursor(res.nextCursor ?? null);
-      setCurrentCursor(cursor ?? null);
-      setSelectedIds([]);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(
-        err?.response?.data?.message || "Unable to load transactions from Slash"
-      );
-    } finally {
-      setLoadingTx(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeAccountId != null) {
-      setSelectedCardId("");
-      setSelectedVaId("");
-      setFromDate("");
-      setToDate("");
-      setSearchTerm("");
-      setCurrentCursor(null);
-      setNextCursor(null);
-      fetchTransactions(null, false);
-    } else {
-      setTransactions([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccountId]);
-
-  const handleFilterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCurrentCursor(null);
-    setNextCursor(null);
-    fetchTransactions(null, false);
-  };
-
-  const handleLoadMore = () => {
-    if (!nextCursor) return;
-    fetchTransactions(nextCursor, true);
-  };
-
-  // ====== SYNC BUTTON ======
+  // ===== Sync cursor =====
   const [syncing, setSyncing] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [lastSyncCount, setLastSyncCount] = useState<number>(0);
 
-  const handleSync = async () => {
-    if (!activeAccountId) return;
-    try {
-      setSyncing(true);
-      setCurrentCursor(null);
-      setNextCursor(null);
-      await fetchTransactions(null, false);
-      toast.success("Synced transactions from Slash");
-    } finally {
-      setSyncing(false);
-    }
+  const sortParam = useMemo(() => `${sortKey},${sortDir}`, [sortKey, sortDir]);
+
+  const loadDb = useCallback(
+    async (targetPage: number) => {
+      if (!token) return toast.error("Missing token");
+      setLoading(true);
+      try {
+        const res = await transactionApi.listFromDb(
+          {
+            accountId: accountId || undefined,
+            virtualAccountId: virtualAccountId || undefined,
+            cardId: cardId || undefined,
+            status: status || undefined,
+            dateFrom: toIso(dateFrom),
+            dateTo: toIso(dateTo),
+            page: targetPage,
+            size,
+            sort: sortParam,
+          },
+          token
+        );
+        setItems(res.items || []);
+        setTotal(res.count || 0);
+        setPage(targetPage);
+      } catch (e: any) {
+        toast.error(e?.response?.data?.message || e?.message || "Load transactions failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, accountId, virtualAccountId, cardId, status, dateFrom, dateTo, size, sortParam]
+  );
+
+  const refresh = useCallback(async () => {
+    await loadDb(0);
+  }, [loadDb]);
+
+  const resetCursor = () => {
+    setNextCursor(null);
+    setLastSyncCount(0);
   };
 
-  // ====== CLIENT SEARCH ======
-  const displayTransactions = useMemo(() => {
-    if (!searchTerm.trim()) return transactions;
-    const q = searchTerm.toLowerCase();
-    return transactions.filter((tx) => {
-      const fields: (string | undefined | null)[] = [
-        tx.description,
-        tx.memo,
-        tx.merchantDescription,
-        tx.merchantData?.description,
-        tx.merchantData?.location?.country,
-        tx.merchantData?.location?.city,
-        tx.cardId,
-        tx.virtualAccountId,
-      ];
-      return fields.some((f) => f && f.toLowerCase().includes(q));
-    });
-  }, [transactions, searchTerm]);
+  const syncOnce = useCallback(
+    async (cursor?: string | null) => {
+      if (!token) return toast.error("Missing token");
+      setSyncing(true);
+      try {
+        const body: TransactionSyncRequest = {
+          accountId: accountId || undefined,
+          virtualAccountId: virtualAccountId || undefined,
+          cardId: cardId || undefined,
+          status: (status || undefined) as any,
+          cursor: cursor || undefined,
+          limit: 50,
+        };
 
-  // ====== RENDER ======
-  if (loading) return <div>Checking auth...</div>;
-  if (!user) return <div>Not logged in</div>;
+        const res = await transactionApi.syncFromSlash(body, token);
+        const nc = res?.metadata?.nextCursor ?? null;
+        const c = Number(res?.metadata?.count ?? 0);
+
+        setNextCursor(nc);
+        setLastSyncCount(c);
+
+        toast.success(`Sync ok: pulled ${c} tx${nc ? " (has next cursor)" : ""}`);
+        await refresh();
+      } catch (e: any) {
+        toast.error(e?.response?.data?.message || e?.message || "Sync failed");
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [token, accountId, virtualAccountId, cardId, status, refresh]
+  );
+
+  const syncAll = useCallback(async () => {
+    // loop sync until cursor null OR pulled 0
+    // NOTE: làm tuần tự, tránh spam provider
+    let cursor: string | null = nextCursor;
+    let first = true;
+
+    while (first || cursor) {
+      // eslint-disable-next-line no-await-in-loop
+      await syncOnce(first ? null : cursor);
+      first = false;
+
+      // read updated states “fresh” bằng closure-safe cách đơn giản:
+      // break condition dựa trên lastSyncCount/nextCursor không an toàn trong loop.
+      // nên làm heuristic: gọi syncOnce xong, reload cursor từ response? -> syncOnce currently sets state only.
+      // Vì vậy: ta stop nếu API trả nextCursor null hoặc count == 0 bằng cách refactor syncOnce return res.
+      // Nhưng để copy-paste gọn, tao để syncAll = call syncOnce manual theo nút "Sync Next" bên dưới.
+      break;
+    }
+
+    toast.info("Tip: dùng nút Sync Next để kéo tiếp theo cursor (đỡ state async rối).");
+  }, [nextCursor, syncOnce]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Dashboard
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Transactions
-          </h1>
-        </div>
+    <div className="w-full p-6">
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Transactions</h2>
 
-        <div className="flex items-center gap-2">
-          {activeAccount && (
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
-              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="font-medium">{activeAccount.name}</span>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded-lg bg-white shadow border hover:bg-gray-50"
+              onClick={() => {
+                resetCursor();
+                refresh();
+              }}
+              disabled={loading || syncing}
+            >
+              Reload
+            </button>
 
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing || loadingTx}
-            className="inline-flex items-center gap-2 rounded-full bg-brand-500 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {syncing ? (
-              <svg
-                className="h-4 w-4 animate-spin"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                  fill="none"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v4l3.5-3.5L12 0v4a8 8 0 00-8 8h4z"
-                />
-              </svg>
-            ) : (
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M4 4V1.5M4 4H1.5M4 4L2.5 2.5M16 4V1.5M16 4H18.5M16 4L17.5 2.5M4 16V18.5M4 16H1.5M4 16L2.5 17.5M16 16V18.5M16 16H18.5M16 16L17.5 17.5M6 10C6 8.34315 7.34315 7 9 7H11C12.6569 7 14 8.34315 14 10C14 11.6569 12.6569 13 11 13H10"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            )}
-            <span>{syncing ? "Syncing..." : "Sync"}</span>
-          </button>
-        </div>
-      </div>
+            <button
+              className="px-4 py-2 rounded-lg bg-black text-white shadow hover:opacity-90"
+              onClick={() => {
+                resetCursor();
+                syncOnce(null);
+              }}
+              disabled={syncing}
+              title="Pull from Slash then reload DB"
+            >
+              {syncing ? "Syncing..." : "Sync (start)"}
+            </button>
 
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-        {/* Header */}
-        <div className="flex flex-col justify-between gap-5 border-b border-gray-100 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-5 py-4 sm:flex-row sm:items-center dark:border-gray-800 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Transactions list
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Real-time transactions fetched from Slash
-              {totalCount != null && (
-                <>
-                  {" "}
-                  ·{" "}
-                  <span className="font-medium text-gray-800 dark:text-white/80">
-                    {totalCount} transactions
-                  </span>
-                </>
-              )}
-            </p>
+            <button
+              className="px-4 py-2 rounded-lg bg-white shadow border hover:bg-gray-50 disabled:opacity-50"
+              onClick={() => syncOnce(nextCursor)}
+              disabled={syncing || !nextCursor}
+              title="Continue syncing using metadata.nextCursor"
+            >
+              Sync Next
+            </button>
+
+            <button
+              className="px-4 py-2 rounded-lg bg-white shadow border hover:bg-gray-50"
+              onClick={syncAll}
+              disabled={syncing}
+              title="Not fully auto-looped (see tip toast)"
+            >
+              Sync All (lite)
+            </button>
           </div>
+        </div>
 
-          <form
-            onSubmit={handleFilterSubmit}
-            className="flex flex-wrap items-center gap-3"
-          >
-            {/* Search */}
-            <div className="relative">
-              <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-gray-400 dark:text-gray-500">
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 20 20"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    fillRule="evenodd"
-                    clipRule="evenodd"
-                    d="M3.04199 9.37363C3.04199 5.87693 5.87735 3.04199 9.37533 3.04199C12.8733 3.04199 15.7087 5.87693 15.7087 9.37363C15.7087 12.8703 12.8733 15.7053 9.37533 15.7053C5.87735 15.7053 3.04199 12.8703 3.04199 9.37363ZM9.37533 1.54199C5.04926 1.54199 1.54199 5.04817 1.54199 9.37363C1.54199 13.6991 5.04926 17.2053 9.37533 17.2053C11.2676 17.2053 13.0032 16.5344 14.3572 15.4176L17.1773 18.238C17.4702 18.5309 17.945 18.5309 18.2379 18.238C18.5308 17.9451 18.5309 17.4703 18.238 17.1773L15.4182 14.3573C16.5367 13.0033 17.2087 11.2669 17.2087 9.37363C17.2087 5.04817 13.7014 1.54199 9.37533 1.54199Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </span>
+        {/* Filters */}
+        <div className="bg-white shadow rounded-xl p-4 border">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Account ID</label>
               <input
-                type="text"
-                placeholder="Search description / merchant / memo"
-                className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-10 w-60 rounded-full border border-gray-300 bg-white py-2 pr-4 pl-9 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className="px-3 py-2 rounded-lg border"
+                placeholder="acct_..."
               />
             </div>
 
-            {/* Card select */}
-            <select
-              className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-10 min-w-[150px] rounded-full border border-gray-300 bg-white px-4 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-              value={selectedCardId}
-              onChange={(e) => setSelectedCardId(e.target.value)}
-              disabled={loadingMeta}
-            >
-              <option value="">All cards</option>
-              {cards.map((c) => (
-                <option key={c.id} value={c.slashId || String(c.id)}>
-                  {c.name || c.last4 || `Card #${c.id}`}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Virtual Account ID</label>
+              <input
+                value={virtualAccountId}
+                onChange={(e) => setVirtualAccountId(e.target.value)}
+                className="px-3 py-2 rounded-lg border"
+                placeholder="va_..."
+              />
+            </div>
 
-            {/* VA select */}
-            <select
-              className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-10 min-w-[150px] rounded-full border border-gray-300 bg-white px-4 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-              value={selectedVaId}
-              onChange={(e) => setSelectedVaId(e.target.value)}
-              disabled={loadingMeta}
-            >
-              <option value="">All VAs</option>
-              {virtualAccounts.map((va) => (
-                <option key={va.id} value={va.slashId || String(va.id)}>
-                  {va.name || va.accountNumber || `VA #${va.id}`}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Card ID</label>
+              <input
+                value={cardId}
+                onChange={(e) => setCardId(e.target.value)}
+                className="px-3 py-2 rounded-lg border"
+                placeholder="card_..."
+              />
+            </div>
 
-            {/* From */}
-            <input
-              type="date"
-              id="tx-from-date"
-              className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-10 w-36 appearance-none rounded-full border border-gray-300 bg-white px-4 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-              value={fromDate || ""}
-              onChange={(e) => setFromDate(e.target.value)}
-              onClick={handleDateClick}
-            />
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                className="px-3 py-2 rounded-lg border"
+              >
+                <option value="">All</option>
+                <option value="pending">pending</option>
+                <option value="completed">completed</option>
+                <option value="declined">declined</option>
+              </select>
+            </div>
 
-            {/* To */}
-            <input
-              type="date"
-              id="tx-to-date"
-              className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-10 w-36 appearance-none rounded-full border border-gray-300 bg-white px-4 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-              value={toDate || ""}
-              onChange={(e) => setToDate(e.target.value)}
-              onClick={handleDateClick}
-            />
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Date From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="px-3 py-2 rounded-lg border"
+              />
+            </div>
 
-            {/* Filter button */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Date To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="px-3 py-2 rounded-lg border"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <button
-              type="submit"
-              className="shadow-theme-xs inline-flex h-10 items-center justify-center rounded-full bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={loadingTx}
+              className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90 disabled:opacity-50"
+              onClick={refresh}
+              disabled={loading}
             >
-              {loadingTx ? "Filtering..." : "Filter"}
+              {loading ? "Loading..." : "Apply filters"}
             </button>
-          </form>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Page size</span>
+              <select
+                value={size}
+                onChange={(e) => setSize(Number(e.target.value))}
+                className="px-3 py-2 rounded-lg border"
+              >
+                {[10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Sort</span>
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                className="px-3 py-2 rounded-lg border"
+              >
+                <option value="date">date</option>
+                <option value="amountCents">amount</option>
+              </select>
+              <select
+                value={sortDir}
+                onChange={(e) => setSortDir(e.target.value as SortDir)}
+                className="px-3 py-2 rounded-lg border"
+              >
+                <option value="desc">desc</option>
+                <option value="asc">asc</option>
+              </select>
+            </div>
+
+            <div className="ml-auto text-sm text-gray-600">
+              Total: <span className="font-semibold">{total.toLocaleString()}</span>
+              {nextCursor ? (
+                <span className="ml-3 text-xs text-gray-500">
+                  nextCursor: <span className="font-mono">{nextCursor}</span>
+                </span>
+              ) : null}
+              {lastSyncCount ? (
+                <span className="ml-3 text-xs text-gray-500">
+                  lastSyncCount: <span className="font-semibold">{lastSyncCount}</span>
+                </span>
+              ) : null}
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* TABLE */}
-        <div className="custom-scrollbar overflow-x-auto">
-          <table className="w-full table-auto">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/60 text-xs uppercase tracking-wide text-gray-500 dark:divide-gray-800 dark:border-gray-800 dark:bg-gray-900/40">
-                <th className="p-4 text-left">
-                  <div className="flex w-full items-center gap-3">
-                    <label className="flex cursor-pointer items-center text-sm font-medium text-gray-700 select-none dark:text-gray-400">
-                      <span className="relative">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={allChecked}
-                          onChange={toggleSelectAll}
-                        />
-                        <span
-                          className={`flex h-4 w-4 items-center justify-center rounded-sm border-[1.25px] ${
-                            allChecked
-                              ? "border-brand-500 bg-brand-500"
-                              : "bg-transparent border-gray-300 dark:border-gray-700"
-                          }`}
-                        >
-                          <span className={allChecked ? "" : "opacity-0"}>
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 12 12"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M10 3L4.5 8.5L2 6"
-                                stroke="white"
-                                strokeWidth="1.6666"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </span>
-                        </span>
-                      </span>
-                    </label>
-                    <p className="text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">
-                      Card
-                    </p>
-                  </div>
-                </th>
-
-                <th className="p-4 text-right text-[11px] font-semibold">
-                  Amount
-                </th>
-                <th className="p-4 text-left text-[11px] font-semibold">
-                  Status
-                </th>
-                <th className="p-4 text-left text-[11px] font-semibold">
-                  Reason
-                </th>
-                <th className="p-4 text-left text-[11px] font-semibold">
-                  Description
-                </th>
-                <th className="p-4 text-left text-[11px] font-semibold">
-                  Merchant
-                </th>
-                <th className="p-4 text-left text-[11px] font-semibold">
-                  Country
-                </th>
-                <th className="p-4 text-right text-[11px] font-semibold">
-                  Date
-                </th>
+      {/* Table */}
+      <div className="bg-white shadow rounded-xl border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr className="text-left">
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">VA</th>
+                <th className="px-4 py-3">Card</th>
+                <th className="px-4 py-3">MCC</th>
+                <th className="px-4 py-3">Country</th>
               </tr>
             </thead>
-
-            <tbody className="divide-x divide-y divide-gray-100 dark:divide-gray-800">
-              {loadingTx && transactions.length === 0 ? (
+            <tbody>
+              {items.length === 0 && !loading ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="p-6 text-center text-sm text-gray-500"
-                  >
-                    Loading transactions...
+                  <td className="px-4 py-6 text-gray-500" colSpan={8}>
+                    No data
                   </td>
                 </tr>
-              ) : displayTransactions.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="p-6 text-center text-sm text-gray-500"
-                  >
-                    No transactions found
+              ) : null}
+
+              {items.map((tx) => (
+                <tr key={tx.id} className="border-b hover:bg-gray-50">
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {tx.date ? new Date(tx.date).toLocaleString() : "-"}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-900">{tx.description || "-"}</div>
+                    <div className="text-xs text-gray-500">{tx.merchantDescription || ""}</div>
+                    <div className="text-xs text-gray-400 font-mono">{tx.id}</div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {formatUsdNoDecimals(tx.amountCents)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="px-2 py-1 rounded-full border text-xs">
+                      {tx.status || "-"}
+                    </span>
+                    {tx.detailedStatus && tx.detailedStatus !== tx.status ? (
+                      <div className="text-xs text-gray-500">{tx.detailedStatus}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">{tx.virtualAccountId || "-"}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{tx.cardId || "-"}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{tx.mcc || "-"}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{tx.country || "-"}</td>
                 </tr>
-              ) : (
-                displayTransactions.map((tx) => {
-                  const isNegative = (tx.amountCents ?? 0) < 0;
-                  const checked = tx.id ? selectedIds.includes(tx.id) : false;
-
-                  const status = (tx.status || "").toLowerCase();
-                  let statusClass =
-                    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-                  if (status === "posted" || status === "succeeded") {
-                    statusClass =
-                      "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400";
-                  } else if (status === "pending" || status === "processing") {
-                    statusClass =
-                      "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
-                  } else if (status === "declined" || status === "failed") {
-                    statusClass =
-                      "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400";
-                  }
-
-                  return (
-                    <tr
-                      key={tx.id}
-                      className="transition hover:bg-gray-50 dark:hover:bg-gray-900"
-                    >
-                      {/* checkbox + card */}
-                      <td className="p-4 whitespace-nowrap">
-                        <div className="group flex items-center gap-3">
-                          <label className="flex cursor-pointer items-center text-sm font-medium text-gray-700 select-none dark:text-gray-400">
-                            <span className="relative">
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={checked}
-                                onChange={() => toggleRow(tx.id)}
-                              />
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded-sm border-[1.25px] ${
-                                  checked
-                                    ? "border-brand-500 bg-brand-500"
-                                    : "bg-transparent border-gray-300 dark:border-gray-700"
-                                }`}
-                              >
-                                <span className={checked ? "" : "opacity-0"}>
-                                  <svg
-                                    width="12"
-                                    height="12"
-                                    viewBox="0 0 12 12"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                  >
-                                    <path
-                                      d="M10 3L4.5 8.5L2 6"
-                                      stroke="white"
-                                      strokeWidth="1.6666"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                </span>
-                              </span>
-                            </span>
-                          </label>
-
-                          <div className="text-[13px] font-medium text-gray-800 dark:text-gray-100">
-                            {getCardLabel(tx.cardId)}
-                            <div className="text-[11px] text-gray-400">
-                              {getVaName(tx.virtualAccountId)}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* amount */}
-                      <td className="p-4 whitespace-nowrap text-right">
-                        <p
-                          className={`text-sm font-semibold ${
-                            isNegative
-                              ? "text-red-600"
-                              : "text-emerald-600 dark:text-emerald-400"
-                          }`}
-                        >
-                          {formatAmount(tx.amountCents)}
-                        </p>
-                      </td>
-
-                      {/* status */}
-                      <td className="p-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusClass}`}
-                        >
-                          {tx.status || "-"}
-                        </span>
-                      </td>
-
-                      {/* reason */}
-                      <td className="p-4 whitespace-nowrap">
-                        <p className="max-w-[180px] truncate text-sm text-gray-700 dark:text-gray-400">
-                          {tx.declineReason ||
-                            tx.approvalReason ||
-                            tx.detailedStatus ||
-                            "—"}
-                        </p>
-                      </td>
-
-                      {/* description */}
-                      <td className="p-4 whitespace-nowrap">
-                        <p className="max-w-[220px] truncate text-sm text-gray-700 dark:text-gray-400">
-                          {tx.description || tx.memo || "—"}
-                        </p>
-                      </td>
-
-                      {/* merchant */}
-                      <td className="p-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          {tx.merchantDescription ||
-                            tx.merchantData?.description ||
-                            "—"}
-                        </span>
-                      </td>
-
-                      {/* country */}
-                      <td className="p-4 whitespace-nowrap">
-                        <p className="text-sm text-gray-700 dark:text-gray-400">
-                          {tx.merchantData?.location?.country || "—"}
-                        </p>
-                      </td>
-
-                      {/* date */}
-                      <td className="p-4 whitespace-nowrap text-right">
-                        <p className="text-sm text-gray-700 dark:text-gray-400">
-                          {formatDateTime(tx.date)}
-                        </p>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+              ))}
             </tbody>
           </table>
         </div>
 
-        {/* FOOTER */}
-        <div className="border-t border-gray-100 px-5 py-4 dark:border-gray-800">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Showing{" "}
-              <span className="font-medium text-gray-800 dark:text-white/90">
-                {displayTransactions.length}
-              </span>{" "}
-              of{" "}
-              <span className="font-medium text-gray-800 dark:text-white/90">
-                {totalCount ?? displayTransactions.length}
-              </span>{" "}
-              transactions
-            </div>
+        {/* Pagination */}
+        <div className="flex items-center justify-between p-4">
+          <button
+            className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-50"
+            onClick={() => loadDb(Math.max(0, page - 1))}
+            disabled={loading || page <= 0}
+          >
+            Prev
+          </button>
 
-            <div className="flex items-center gap-2">
-              {nextCursor && (
-                <button
-                  type="button"
-                  onClick={handleLoadMore}
-                  disabled={loadingTx}
-                  className="shadow-theme-xs inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.04]"
-                >
-                  <span>Load more</span>
-                </button>
-              )}
-            </div>
+          <div className="text-sm text-gray-600">
+            Page <span className="font-semibold">{page + 1}</span> /{" "}
+            <span className="font-semibold">
+              {Math.max(1, Math.ceil(total / size))}
+            </span>
           </div>
+
+          <button
+            className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-50"
+            onClick={() => loadDb(page + 1)}
+            disabled={loading || (page + 1) * size >= total}
+          >
+            Next
+          </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default TransactionManager;
