@@ -30,35 +30,31 @@ export type GetPagedVisibleCardsParams = GetPagedCardsParams;
 
 export const cardApi = {
 
-  async getPagedCards(params: GetPagedCardsParams): Promise<CardPage> {
-    const query: any = {
-      accountId: params.accountId,
-      page: params.page,
-      size: params.size,
-    };
+async getPagedCards(params: GetPagedCardsParams): Promise<CardPage> {
+  const query: any = {
+    accountId: params.accountId,
+    page: params.page,
+    size: params.size,
+  };
 
-    if (params.virtualAccountId != null) {
-      query.virtualAccountId = params.virtualAccountId;
-    }
-    if (params.cardGroupId != null) {
-      query.cardGroupId = params.cardGroupId;
-    }
-    if (params.search && params.search.trim()) {
-      query.search = params.search.trim();
-    }
-    if (params.status && params.status.trim()) {
-      query.status = params.status.trim();
-    }
-    if (params.sort && params.sort.trim()) {
-      query.sort = params.sort.trim();
-    }
-    if (params.dir && params.dir.trim()) {
-      query.dir = params.dir.trim();
-    }
+  if (params.virtualAccountId != null) query.virtualAccountId = params.virtualAccountId;
+  if (params.cardGroupId != null) query.cardGroupId = params.cardGroupId;
 
-    const { data } = await api.get<CardPage>("/api/cards", { params: query });
-    return data;
-  },
+  const s = params.search?.trim();
+  if (s) query.search = s;
+
+  const st = params.status?.trim();
+  if (st) query.status = st;
+
+  const sort = params.sort?.trim();
+  if (sort) query.sort = sort;
+
+  if (params.dir) query.dir = params.dir; // dir là "asc" | "desc" khỏi trim
+
+  const { data } = await api.get<CardPage>("/api/cards", { params: query });
+  return data;
+},
+
 
   async getPagedCardsVisible(
     params: GetPagedVisibleCardsParams

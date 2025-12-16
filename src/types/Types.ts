@@ -94,6 +94,7 @@ export interface AccountPage {
   totalPages: number;
 }
 export interface VirtualAccountPage {
+  items: VirtualAccountPage;
   content: VirtualAccount[];
 
   totalPages: number;
@@ -481,100 +482,100 @@ export interface MccCodeOptionDTO {
   name: string;
 }
 
-// ======================== TRANSACTIONS ========================
+export type TransactionStatus = string; // "pending" | "settled" ... (Slash có thể thêm)
+export type TransactionDetailedStatus = string;
 
-export interface MerchantLocation {
-  city?: string;
-  state?: string;
-  country?: string;
-  zip?: string;
+export interface TransactionPageDTO {
+  items: TransactionItemDTO[];
+  metadata: {
+    nextCursor?: string | null;
+    count?: number | null;
+  };
 }
 
-export interface MerchantData {
-  description?: string;
-  categoryCode?: string;
-  location?: MerchantLocation;
-}
-
-export interface OriginalCurrency {
-  code?: string;
-  amountCents?: number | null;
-  conversionRate?: number | null;
-}
-
-export interface WireInfo {
-  typeCode?: string;
-  subtypeCode?: string;
-  omad?: string;
-  imad?: string;
-  senderReference?: string;
-  businessFunctionCode?: string;
-  counterpartyBank?: string;
-}
-
-export interface AchInfo {
-  receiverId?: string;
-  companyId?: string;
-  companyDiscretionaryData?: string;
-  traceNumber?: string;
-  entryClassCode?: string;
-  paymentRelatedInfo?: string;
-  counterpartyBank?: string;
-  companyEntryDescription?: string;
-}
-
-export interface RtpInfo {
-  counterpartyBank?: string;
-  endToEndId?: string;
-  routingNumber?: string;
-  originatorName?: string;
-  description?: string;
-}
-
-export interface FeeRelatedTransaction {
+export interface TransactionItemDTO {
   id?: string;
-  amount?: number | null;
-}
-
-export interface FeeInfo {
-  relatedTransaction?: FeeRelatedTransaction | null;
-}
-
-export interface CryptoInfo {
-  txHash?: string;
-  senderAddress?: string;
-}
-
-export interface Transaction {
-  id: string;
   date?: string;
   description?: string;
-  amountCents?: number | null;
-  status?: string;
-  detailedStatus?: string;
+
+  amountCents?: number;
+
+  status?: TransactionStatus;
+  detailedStatus?: TransactionDetailedStatus;
+
   accountId?: string;
   accountSubtype?: string;
+
   memo?: string;
   merchantDescription?: string;
-  merchantData?: MerchantData | null;
-  virtualAccountId?: string;
+
+  merchantData?: {
+    description?: string;
+    categoryCode?: string;
+    location?: {
+      city?: string;
+      state?: string;
+      country?: string;
+      zip?: string;
+    };
+  };
+
+  virtualAccountId?: string; // Slash VA id trong response
   cardId?: string;
-  originalCurrency?: OriginalCurrency | null;
+
+  originalCurrency?: {
+    code?: string;
+    amountCents?: number;
+    conversionRate?: number;
+  };
+
   orderId?: string;
   referenceNumber?: string;
   authorizedAt?: string;
+
   declineReason?: string;
   approvalReason?: string;
-  providerAuthorizationId?: string;
-  wireInfo?: WireInfo | null;
-  achInfo?: AchInfo | null;
-  rtpInfo?: RtpInfo | null;
-  feeInfo?: FeeInfo | null;
-  cryptoInfo?: CryptoInfo | null;
-}
 
-export interface TransactionListResponse {
-  items: Transaction[];
-  nextCursor?: string | null;
-  count?: number | null;
+  providerAuthorizationId?: string;
+
+  wireInfo?: {
+    typeCode?: string;
+    subtypeCode?: string;
+    omad?: string;
+    imad?: string;
+    senderReference?: string;
+    businessFunctionCode?: string;
+    counterpartyBank?: string;
+  };
+
+  achInfo?: {
+    receiverId?: string;
+    companyId?: string;
+    companyDiscretionaryData?: string;
+    traceNumber?: string;
+    entryClassCode?: string;
+    paymentRelatedInfo?: string;
+    counterpartyBank?: string;
+    companyEntryDescription?: string;
+  };
+
+  rtpInfo?: {
+    counterpartyBank?: string;
+    endToEndId?: string;
+    routingNumber?: string;
+    originatorName?: string;
+    description?: string;
+  };
+
+  feeInfo?: {
+    relatedTransaction?: {
+      id?: string;
+      amount?: number;
+    };
+  };
+
+  cryptoInfo?: {
+    txHash?: string;
+    senderAddress?: string;
+  };
 }
