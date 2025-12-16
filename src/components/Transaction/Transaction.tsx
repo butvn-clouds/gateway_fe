@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import api from "../../config/api.config";
 import { useAuth } from "../../context/AuthContextProvider";
+import { virtualAccountApi } from "../../api/api.virtualaccout";
 
 import type {
   Account,
@@ -12,11 +13,14 @@ import type {
   TransactionItemDTO,
 } from "../../types/Types";
 
-import { virtualAccountApi } from "../../api/api.virtualaccout";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 type Props = {
   pageSize?: number; // rows per page (client pagination)
 };
+
+type TxStatusFilter = "" | "pending" | "posted";
 
 const fmtUsd = (cents?: number | null) => {
   if (cents == null) return "-";
@@ -38,10 +42,10 @@ const setIf = (q: Record<string, any>, key: string, val: any) => {
 };
 
 /**
- * Slash có thể trả:
- * - ISO string có timezone: 2025-12-12T03:10:00Z / +00:00
- * - ISO string không timezone: 2025-12-12T03:10:00  (danger)
- * - epoch ms dạng number/string
+ * Slash can return:
+ * - ISO with timezone: 2025-12-12T03:10:00Z / +00:00
+ * - ISO without timezone: 2025-12-12T03:10:00 (danger)
+ * - epoch ms number/string
  */
 const parseSlashDate = (value?: string | number | null): Date | null => {
   if (value == null) return null;
@@ -69,7 +73,6 @@ const parseSlashDate = (value?: string | number | null): Date | null => {
 const fmtDateLocal = (value?: string | number | null) => {
   const d = parseSlashDate(value);
   if (!d) return "-";
-
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
@@ -78,6 +81,7 @@ const fmtDateLocal = (value?: string | number | null) => {
   return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
 };
 
+// yyyy-mm-dd -> epoch ms (local)
 const localDayStartMs = (yyyyMmDd?: string) => {
   if (!yyyyMmDd) return undefined;
   const d = new Date(`${yyyyMmDd}T00:00:00`);
@@ -93,7 +97,7 @@ const localDayEndMs = (yyyyMmDd?: string) => {
 export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const { user, loading } = useAuth();
 
-  // ===== account =====
+  // ===== accounts =====
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
 
   const activeAccountId: number | null = useMemo(() => {
@@ -111,32 +115,55 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   // ===== filters =====
   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);
   const [selectedCardSlashId, setSelectedCardSlashId] = useState<string>("");
+  const [status, setStatus] = useState<TxStatusFilter>("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
 
   // ===== data =====
   const [items, setItems] = useState<TransactionItemDTO[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [count, setCount] = useState<number>(0);
   const [fetching, setFetching] = useState(false);
 
   // ===== VA list =====
   const [loadingVa, setLoadingVa] = useState(false);
   const [accountVAs, setAccountVAs] = useState<VirtualAccount[]>([]);
 
-  // ===== Cards list (from DB) =====
+  // ===== Cards list =====
   const [loadingCards, setLoadingCards] = useState(false);
   const [cards, setCards] = useState<Card[]>([]);
 
   // ===== client pagination =====
   const [page, setPage] = useState(0);
 
-  // build map slashCardId -> label
+  // ===== default date range: last 7 days (1 lần khi account available) =====
+  useEffect(() => {
+    if (!activeAccountId) return;
+    if (fromDate || toDate) return;
+
+    const now = new Date();
+    const to = new Date(now);
+    const from = new Date(now);
+    from.setDate(from.getDate() - 7);
+
+    const toStr = `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(to.getDate()).padStart(2, "0")}`;
+
+    const fromStr = `${from.getFullYear()}-${String(
+      from.getMonth() + 1
+    ).padStart(2, "0")}-${String(from.getDate()).padStart(2, "0")}`;
+
+    setFromDate(fromStr);
+    setToDate(toStr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccountId]);
+
+  // ===== build card label map =====
   const cardLabelBySlashId = useMemo(() => {
     const m = new Map<string, string>();
     (cards ?? []).forEach((c: any) => {
-      const slashId =
-        c?.slashId || c?.idSlash || c?.slashCardId || c?.cardId;
+      const slashId = c?.slashId || c?.idSlash || c?.slashCardId || c?.cardId;
       if (!slashId) return;
 
       const label =
@@ -188,7 +215,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     run();
   }, [activeAccountId]);
 
-  // ===== load cards from DB (to map tx.cardId -> card name) =====
+  // ===== load cards from DB =====
   useEffect(() => {
     const run = async () => {
       if (!activeAccountId) {
@@ -202,7 +229,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
         const params: any = { accountId: activeAccountId, page: 0, size: 1000 };
         if (selectedVaId != null) params.virtualAccountId = selectedVaId;
 
-        // đổi path nếu BE của m khác
         const { data } = await api.get<any>("/api/cards", { params });
         const list: any[] =
           data?.items || data?.content || data?.data?.items || [];
@@ -226,12 +252,16 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setIf(params, "filter:from_date", localDayStartMs(fromDate));
     setIf(params, "filter:to_date", localDayEndMs(toDate));
     setIf(params, "filter:cardId", selectedCardSlashId);
-    setIf(params, "cursor", cursor);
+    setIf(params, "filter:status", status);
 
+    setIf(params, "cursor", cursor);
     return params;
   };
 
-  const fetchTransactions = async (cursor?: string | null, append?: boolean) => {
+  const fetchTransactions = async (
+    cursor?: string | null,
+    append?: boolean
+  ) => {
     if (!activeAccountId) return;
 
     setFetching(true);
@@ -243,13 +273,9 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       const data = res.data;
       const newItems = data?.items ?? [];
       const nc = data?.metadata?.nextCursor ?? null;
-      const ct =
-        data?.metadata?.count ??
-        (append ? count + newItems.length : newItems.length);
 
       setItems((prev) => (append ? [...prev, ...newItems] : newItems));
       setNextCursor(nc);
-      setCount(ct);
     } catch (e: any) {
       console.error(e);
       toast.error(e?.response?.data?.message || "Fetch transactions failed");
@@ -258,21 +284,26 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     }
   };
 
-  // ✅ AUTO LOAD on filter change (reset everything)
+  // ✅ AUTO LOAD on filter change
   useEffect(() => {
     if (!activeAccountId) return;
 
     setPage(0);
     setItems([]);
     setNextCursor(null);
-    setCount(0);
 
     fetchTransactions(null, false);
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccountId, selectedVaId, selectedCardSlashId, fromDate, toDate]);
+  }, [
+    activeAccountId,
+    selectedVaId,
+    selectedCardSlashId,
+    status,
+    fromDate,
+    toDate,
+  ]);
 
-  // ===== helpers render =====
+  // ===== render helpers =====
   const cardLabel = (tx: TransactionItemDTO) => {
     const slashId = (tx as any).cardId;
     if (!slashId) return "—";
@@ -293,7 +324,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const txCountry = (tx: TransactionItemDTO) =>
     (tx as any)?.merchantData?.location?.country || "—";
 
-  // ✅ FIX DATE: occurredAt > authorizedAt > date > createdAt
   const txDate = (tx: TransactionItemDTO) => {
     const v =
       (tx as any).occurredAt ??
@@ -303,18 +333,17 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     return fmtDateLocal(v);
   };
 
-  // ===== pagination slices =====
-  const totalLocal = items.length;
-  const totalPages = Math.max(1, Math.ceil(totalLocal / pageSize));
+  // ===== client paging =====
+  const totalLoaded = items.length; // ✅ total tx without extra API
+  const totalPages = Math.max(1, Math.ceil(totalLoaded / pageSize));
   const start = page * pageSize;
   const end = start + pageSize;
   const pageItems = items.slice(start, end);
 
-  // ✅ when user goes next and we don't have enough local data, auto fetch by cursor
   const ensureDataForPage = async (targetPage: number) => {
     const need = (targetPage + 1) * pageSize;
-    if (items.length >= need) return; // already have enough data
-    if (!nextCursor) return; // no more
+    if (items.length >= need) return;
+    if (!nextCursor) return;
     if (fetching) return;
 
     await fetchTransactions(nextCursor, true);
@@ -324,61 +353,109 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
   const onNext = async () => {
     const nextPage = page + 1;
-
-    // try to ensure data for that page (may load more from Slash)
     await ensureDataForPage(nextPage);
 
-    // after fetch, if still not enough => stop
     const need = (nextPage + 1) * pageSize;
     if (items.length < need && !nextCursor) return;
 
     setPage(nextPage);
   };
 
-  // keep page valid if items shrink (filters change)
   useEffect(() => {
     if (page === 0) return;
     const maxPage = Math.max(0, Math.ceil(items.length / pageSize) - 1);
     if (page > maxPage) setPage(maxPage);
   }, [items.length, page, pageSize]);
 
+  // ===== Export Excel =====
+  const exportExcel = () => {
+    if (!items || items.length === 0) {
+      toast.info("No data to export");
+      return;
+    }
+
+    const rows = items.map((tx: any) => ({
+      Card: cardLabel(tx),
+      Amount: fmtUsd(tx.amountCents),
+      Status: tx.status || tx.detailedStatus || "",
+      Reason: tx.declineReason || tx.approvalReason || "",
+      Description: txDescription(tx),
+      Merchant: txMerchant(tx),
+      Country: txCountry(tx),
+      Date: txDate(tx),
+      TxId: tx.id || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const fileName = `transactions_${activeAccountId || "account"}_${Date.now()}.xlsx`;
+    saveAs(new Blob([buf], { type: "application/octet-stream" }), fileName);
+  };
+
   if (loading) return <div>Check auth...</div>;
   if (!user) return <div>Not logged in</div>;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="rounded-2xl bg-white shadow-sm border border-slate-200/70 px-4 py-4 space-y-4">
-        <div className="space-y-1">
-          <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">
-            Dashboard
+      {/* Header + Filters */}
+      <div className="rounded-3xl bg-white shadow-sm border border-slate-200/70 px-5 py-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">
+              Dashboard
+            </div>
+            <div className="text-3xl font-semibold text-slate-900">
+              Transactions
+            </div>
+            <div className="text-xs text-slate-500">
+              {activeAccount ? activeAccount.name : "No active account"}
+            </div>
           </div>
-          <div className="text-3xl font-semibold text-slate-900">
-            Transactions
-          </div>
-          <div className="text-xs text-slate-500">
-            {activeAccount ? activeAccount.name : "No active account"}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchTransactions(null, false)}
+              disabled={fetching || !activeAccountId}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {fetching ? "Loading..." : "Refresh"}
+            </button>
+
+            <button
+              type="button"
+              onClick={exportExcel}
+              disabled={!items.length}
+              className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Export Excel
+            </button>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Filters row */}
+        <div
+          className="flex flex-wrap items-end gap-3"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Card */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-700">Card:</span>
+          <div className="min-w-[210px]">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">Card</div>
             <select
-              className="min-w-[180px] rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
               value={selectedCardSlashId}
               onChange={(e) => setSelectedCardSlashId(e.target.value)}
               disabled={loadingCards}
             >
               <option value="">{loadingCards ? "Loading..." : "All"}</option>
               {cards.map((c: any) => {
-                const slashId =
-                  c?.slashId || c?.idSlash || c?.slashCardId || c?.cardId;
+                const slashId = c?.slashId || c?.idSlash || c?.slashCardId || c?.cardId;
                 if (!slashId) return null;
-                const label =
-                  cardLabelBySlashId.get(String(slashId)) || String(slashId);
+                const label = cardLabelBySlashId.get(String(slashId)) || String(slashId);
                 return (
                   <option key={String(slashId)} value={String(slashId)}>
                     {label}
@@ -389,10 +466,10 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
           </div>
 
           {/* VA */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-700">VA Name:</span>
+          <div className="min-w-[240px]">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">VA Name</div>
             <select
-              className="min-w-[220px] rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
               value={selectedVaId ?? ""}
               onChange={(e) =>
                 setSelectedVaId(e.target.value ? Number(e.target.value) : null)
@@ -408,39 +485,56 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
             </select>
           </div>
 
-          {/* From */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-700">From:</span>
+          {/* Status */}
+          <div className="min-w-[180px]">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">Status</div>
+            <select
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as TxStatusFilter)}
+            >
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="posted">Posted</option>
+            </select>
+          </div>
+
+          {/* Date range */}
+          <div className="min-w-[190px] relative z-[9999]">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">From</div>
             <input
               type="date"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
 
-          {/* To */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-700">To:</span>
+          <div className="min-w-[190px] relative z-[9999]">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">To</div>
             <input
               type="date"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
 
-          <div className="ml-auto text-xs text-slate-500">
-            {fetching ? "Loading..." : `Page size: ${pageSize}`}
+          <div className="ml-auto text-xs text-slate-500 pb-2">
+            {fetching ? "Loading..." : `Auto load • Page size: ${pageSize}`}
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-slate-700 font-semibold">
-            {count || items.length} transactions
+        {/* Stats + Pager */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="text-sm font-semibold text-slate-800">
+            Total loaded: {totalLoaded} {nextCursor ? "(more available)" : ""}
           </div>
 
-          {/* Pager */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -452,8 +546,8 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
             </button>
 
             <div className="text-xs text-slate-500">
-              Page <span className="font-semibold text-slate-800">{page + 1}</span>{" "}
-              / <span className="font-semibold text-slate-800">{totalPages}</span>
+              Page <span className="font-semibold text-slate-800">{page + 1}</span> /{" "}
+              <span className="font-semibold text-slate-800">{totalPages}</span>
             </div>
 
             <button
@@ -469,54 +563,32 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
         <div className="max-w-full overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200">
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Card
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Amount
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Reason
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Description
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Merchant
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Country
-                </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Date
-                </th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Card</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Amount</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Status</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Reason</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Description</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Merchant</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Country</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Date</th>
               </tr>
             </thead>
 
             <tbody className="divide-y">
               {fetching && items.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-6 text-center text-slate-500"
-                  >
+                  <td colSpan={8} className="px-4 py-7 text-center text-slate-500">
                     Loading transactions...
                   </td>
                 </tr>
-              ) : totalLocal === 0 ? (
+              ) : totalLoaded === 0 ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
+                  <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                     No transactions found
                   </td>
                 </tr>
@@ -531,8 +603,8 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       <span
                         className={
                           (tx.amountCents ?? 0) < 0
-                            ? "text-red-500"
-                            : "text-slate-900"
+                            ? "text-red-500 font-semibold"
+                            : "text-slate-900 font-semibold"
                         }
                       >
                         {fmtUsd(tx.amountCents)}
@@ -547,15 +619,18 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       {tx.declineReason || tx.approvalReason || "—"}
                     </td>
 
-                    <td className="px-4 py-3 text-slate-700">
-                      {txDescription(tx)}
+                    <td className="px-4 py-3 text-slate-700 max-w-[360px]">
+                      <div className="truncate">{txDescription(tx)}</div>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {txDescription(tx)}
+
+                    <td className="px-4 py-3 text-slate-700 max-w-[260px]">
+                      <div className="truncate">{txMerchant(tx)}</div>
                     </td>
+
                     <td className="px-4 py-3 whitespace-nowrap text-slate-700">
                       {txCountry(tx)}
                     </td>
+
                     <td className="px-4 py-3 whitespace-nowrap text-slate-700">
                       {txDate(tx)}
                     </td>
@@ -566,7 +641,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
           </table>
         </div>
 
-        {/* Optional manual load more */}
         {nextCursor && (
           <div className="border-t border-slate-200 bg-white px-4 py-3 flex justify-center">
             <button
