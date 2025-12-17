@@ -579,3 +579,16 @@ export interface TransactionItemDTO {
     senderAddress?: string;
   };
 }
+
+
+export interface TransactionCursorScanDTO {
+  totalPages: number;
+  totalItemsLoaded: number;
+  firstPageSize?: number | null;
+
+  nextCursors: string[];
+  pageItemCounts: number[];
+
+  lastNextCursor?: string | null;
+  stopReason?: string;
+}

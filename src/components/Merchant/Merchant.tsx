@@ -21,10 +21,6 @@ export const MerchantPages: React.FC = () => {
     return null;
   }, [user, accounts]);
 
-  const activeAccount: Account | null = useMemo(() => {
-    if (!activeAccountId) return null;
-    return accounts.find((acc) => acc.id === activeAccountId) || null;
-  }, [accounts, activeAccountId]);
 
   const [categories, setCategories] = useState<MerchantCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);

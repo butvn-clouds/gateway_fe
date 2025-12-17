@@ -1,5 +1,5 @@
 import PageMeta from "../../components/common/PageMeta";
-import {TransactionManager} from "../../components/Transaction/Transaction";
+import TransactionManager from "../../components/Transaction/Transaction";
 export default function TransactionPage() {
   return (
     <>
