@@ -29,7 +29,7 @@ type UtilizationPreset = "daily" | "weekly" | "monthly";
 const toggleStringInArray = (list: string[], value: string): string[] =>
   list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
-export const CardGroupManager: React.FC<Props> = ({ pageSize = 10 }) => {
+export const CardGroupManager: React.FC<Props> = ({ pageSize = 50 }) => {
   const { user, loading } = useAuth();
 
   const [selectedVaId, setSelectedVaId] = useState<number | null>(null);

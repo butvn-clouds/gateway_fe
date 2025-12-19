@@ -8,7 +8,7 @@ interface Props {
   pageSize?: number;
 }
 
-export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 10 }) => {
+export const VirtualAccountManager: React.FC<Props> = ({ pageSize = 50 }) => {
   const { user, loading } = useAuth();
 
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(

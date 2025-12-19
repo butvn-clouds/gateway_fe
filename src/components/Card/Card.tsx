@@ -34,7 +34,7 @@ type CardDetailState = Card & {
   isSingleUse?: boolean | null;
 };
 
-export const CardManager: React.FC<Props> = ({ pageSize = 20 }) => {
+export const CardManager: React.FC<Props> = ({ pageSize = 50 }) => {
   const { user, loading: authLoading } = useAuth();
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
   const [syncing, setSyncing] = useState(false);
