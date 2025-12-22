@@ -1,4 +1,3 @@
-// src/components/transaction/TransactionManager.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import api from "../../config/api.config";
@@ -52,6 +51,8 @@ const STATUS_LABEL: Record<StatusKey, string> = {
   returned: "Returned",
   dispute: "Dispute",
 };
+
+const TOTAL_ONLY = new Set<string>(["pending", "settled"]);
 
 const fmtUsd = (cents?: number | null) => {
   if (cents == null) return "-";
@@ -137,11 +138,12 @@ const ymdToDate = (ymd?: string) => {
 };
 
 type Sum = { count: number; amountCents: number };
+type CountryBucketKey = "NON_US" | "US" | "UNKNOWN";
 type CountryCalc = {
-  key: "NON_US" | "US";
+  key: CountryBucketKey;
   label: string;
-  total: Sum;
-  byStatus: Record<StatusKey, Sum>;
+  total: Sum; 
+  byStatus: Record<StatusKey, Sum>; 
 };
 
 const initStatusMap = (): Record<StatusKey, Sum> => {
@@ -158,13 +160,8 @@ const toStatusKey = (s: string): StatusKey | null => {
 const txStatusNormalized = (tx: any): string =>
   String(tx?.detailedStatus ?? "").trim().toLowerCase();
 
-/**
- * =========================
- * ✅ COUNTRY: robust extract + normalize
- * NON-US = bất cứ gì KHÔNG phải US
- * =========================
- */
-const normalizeCountry = (raw: any): string => (raw ?? "").toString().trim().toUpperCase();
+const normalizeCountry = (raw: any): string =>
+  (raw ?? "").toString().trim().toUpperCase();
 
 const getTxCountryRaw = (tx: any): any => {
   return (
@@ -189,22 +186,24 @@ const isUSCountryValue = (raw: any): boolean => {
   if (c.includes("UNITED STATES")) return true;
   if (c === "UNITED STATES OF AMERICA") return true;
 
-  // US-CA, US/CA, US_CA, US.CA, "US CA"...
   if (c.startsWith("US") && c.length > 2) {
     const ch = c[2];
-    if (ch === "-" || ch === "/" || ch === "_" || ch === "." || ch === " ") return true;
+    if (ch === "-" || ch === "/" || ch === "_" || ch === "." || ch === " ")
+      return true;
   }
 
   return false;
 };
 
-const isUSTx = (tx: any): boolean => {
+const isUSTxHeuristic = (tx: any): boolean => {
   const raw = getTxCountryRaw(tx);
   if (isUSCountryValue(raw)) return true;
 
-  // fallback khi country trống nhưng location kiểu US
   const loc = tx?.merchantData?.location ?? tx?.location ?? {};
-  const state = (loc?.state ?? loc?.region ?? "").toString().trim().toUpperCase();
+  const state = (loc?.state ?? loc?.region ?? "")
+    .toString()
+    .trim()
+    .toUpperCase();
   const postal = (loc?.postalCode ?? loc?.zip ?? "").toString().trim();
   const city = (loc?.city ?? "").toString().trim().toUpperCase();
 
@@ -217,7 +216,8 @@ const isUSTx = (tx: any): boolean => {
   if (US_STATES.has(state)) return true;
   if (/^\d{5}(-\d{4})?$/.test(postal)) return true;
 
-  if (city === "NEW YORK" || city === "LOS ANGELES" || city === "SAN FRANCISCO") return true;
+  if (city === "NEW YORK" || city === "LOS ANGELES" || city === "SAN FRANCISCO")
+    return true;
 
   return false;
 };
@@ -225,18 +225,14 @@ const isUSTx = (tx: any): boolean => {
 const getTxCountryNorm = (tx: any): string => {
   const c = normalizeCountry(getTxCountryRaw(tx));
   if (c) return c;
-  if (isUSTx(tx)) return "US";
+  if (isUSTxHeuristic(tx)) return "US";
   return ""; // unknown
 };
 
-/**
- * =========================
- * ✅ DEDUPE: FIX “bin thêm số 1”
- * - Nhiều tx không có `id` ở field `id`
- * - Phải móc thêm các field id khác (txId/transactionId/providerAuthorizationId/…)
- * - Nếu có id => key chỉ dựa trên id (không dính country/merchant) để khỏi lệch
- * =========================
- */
+const getTxCountryRawNorm = (tx: any): string =>
+  normalizeCountry(getTxCountryRaw(tx));
+
+
 const getTxIdAny = (tx: any): string => {
   const candidates = [
     tx?.id,
@@ -262,7 +258,6 @@ const txKey = (tx: any): string => {
   const realId = getTxIdAny(tx);
   if (realId) return `id:${realId}`;
 
-  // fallback only khi không có id nào
   const cardId = (tx?.cardId ?? "").toString().trim();
   const t = tx?.occurredAt ?? tx?.authorizedAt ?? tx?.date ?? tx?.createdAt ?? "";
   const time = String(t ?? "").trim();
@@ -278,7 +273,6 @@ const txKey = (tx: any): string => {
     .trim()
     .toLowerCase();
 
-  // NOTE: KHÔNG nhét country vào key fallback nữa để tránh “same tx but country resolved later”
   return `k:${cardId}|${time}|${amt}|${st}|${m}`;
 };
 
@@ -294,35 +288,10 @@ const dedupeTx = <T,>(arr: T[]): T[] => {
   return out;
 };
 
-/**
- * ✅ Normalize amount sign
- */
+
 const amountCentsNormalized = (tx: any): number => {
   const raw = Math.trunc(Number(tx?.amountCents ?? 0) || 0);
-  if (raw === 0) return 0;
-
-  if (raw < 0) return raw;
-
-  const st = txStatusNormalized(tx);
-
-  const spendLikeRaw = new Set([
-    "pending",
-    "settled",
-    "declined",
-    "reversed",
-    "dispute",
-    "returned",
-    "posted",
-    "canceled",
-    "failed",
-  ]);
-
-  if (st === "refund") return raw;
-  if (spendLikeRaw.has(st)) return -raw;
-
-  const hasMerchant = !!tx?.merchantData;
-  if (hasMerchant) return -raw;
-
+  if (!Number.isFinite(raw) || raw === 0) return 0;
   return raw;
 };
 
@@ -354,7 +323,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
 
-  const [totalWant, setTotalWant] = useState<number>(50000);
+  const [totalWant] = useState<number>(50000);
 
   const thisYear = new Date().getFullYear();
   const [yearPreset, setYearPreset] = useState<number | "">("");
@@ -365,7 +334,8 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [serverCount, setServerCount] = useState<number | null>(null);
 
   const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<TransactionCursorScanDTO | null>(null);
+  const [scanResult, setScanResult] =
+    useState<TransactionCursorScanDTO | null>(null);
 
   const [loadingVa, setLoadingVa] = useState(false);
   const [accountVAs, setAccountVAs] = useState<VirtualAccount[]>([]);
@@ -377,7 +347,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
   const [mode] = useState<DataSourceMode>("LIVE");
   const lastFetchKeyRef = useRef<string>("");
-
   const fetchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -387,8 +356,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     const ymd = toYmd(now);
     setFromDate(ymd);
     setToDate(ymd);
-  }, [activeAccountId]); // eslint-disable-line
-
+  }, [activeAccountId]); 
   useEffect(() => {
     if (!yearPreset) return;
     const y = Number(yearPreset);
@@ -442,7 +410,12 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
       setLoadingVa(true);
       try {
-        const res = await virtualAccountApi.getByAccountPaged(activeAccountId, 0, 1000, undefined);
+        const res = await virtualAccountApi.getByAccountPaged(
+          activeAccountId,
+          0,
+          1000,
+          undefined
+        );
         const list = res.content || [];
         setAccountVAs(list);
         if (list.length === 1) setSelectedVaId((list[0] as any).id);
@@ -485,7 +458,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     run();
   }, [activeAccountId, selectedVaId]);
 
-  const safeTotalWant = Number.isFinite(totalWant) && totalWant > 0 ? Math.floor(totalWant) : 0;
+  const safeTotalWant = 50000;
 
   const buildCommonParams = () => {
     const params: Record<string, any> = { accountId: activeAccountId };
@@ -537,7 +510,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
       const data: any = res.data;
       const newItems = data?.items ?? [];
-      const nc = data?.metadata?.nextCursor ?? null;
+      const nc = data?.metadata?.nextCursor ?? data?.metadata?.next_cursor ?? null;
 
       const count = data?.metadata?.count;
       const sc = typeof count === "number" ? count : null;
@@ -577,7 +550,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       country,
       fromDate,
       toDate,
-      totalWant,
+      totalWant: safeTotalWant,
       pageSize,
     });
 
@@ -586,7 +559,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
     resetData();
     fetchTransactions(null, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeAccountId,
     selectedVaId,
@@ -595,7 +567,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     country,
     fromDate,
     toDate,
-    totalWant,
     pageSize,
   ]);
 
@@ -676,10 +647,11 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     return base;
   }, [items, country, status]);
 
-  const calcNonUsAndUs = useMemo<CountryCalc[]>(() => {
+
+  const calcBuckets = useMemo<CountryCalc[]>(() => {
     const base = dedupeTx(filteredItems ?? []);
 
-    const init = (key: CountryCalc["key"], label: string): CountryCalc => ({
+    const init = (key: CountryBucketKey, label: string): CountryCalc => ({
       key,
       label,
       total: { count: 0, amountCents: 0 },
@@ -688,31 +660,39 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
     const nonUs = init("NON_US", "NON-US (All except US)");
     const us = init("US", "US");
+    const unknown = init("UNKNOWN", "UNKNOWN (No country)");
 
     for (const tx of base as any[]) {
       const amt = amountCentsNormalized(tx);
-      const bucket = isUSTx(tx) ? us : nonUs;
+      const rawC = getTxCountryRawNorm(tx);
+      const stNorm = txStatusNormalized(tx);
 
-      // luôn tính total
+      let bucket: CountryCalc;
+      if (!rawC) bucket = unknown;
+      else if (isUSCountryValue(rawC)) bucket = us;
+      else bucket = nonUs;
+
       bucket.total.count += 1;
-      bucket.total.amountCents += amt;
 
-      // breakdown theo status nếu map được
-      const st = toStatusKey(txStatusNormalized(tx));
+      if (TOTAL_ONLY.has(stNorm)) {
+        bucket.total.amountCents += amt;
+      }
+
+      const st = toStatusKey(stNorm);
       if (st) {
         bucket.byStatus[st].count += 1;
         bucket.byStatus[st].amountCents += amt;
       }
     }
 
-    return [nonUs, us];
+    return unknown.total.count > 0 ? [nonUs, us, unknown] : [nonUs, us];
   }, [filteredItems]);
 
   const calcGrand = useMemo(() => {
     const byStatus = initStatusMap();
     const total: Sum = { count: 0, amountCents: 0 };
 
-    for (const b of calcNonUsAndUs) {
+    for (const b of calcBuckets) {
       total.count += b.total.count;
       total.amountCents += b.total.amountCents;
 
@@ -724,7 +704,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     }
 
     return { total, byStatus };
-  }, [calcNonUsAndUs]);
+  }, [calcBuckets]);
 
   const totalLoaded = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalLoaded / pageSize));
@@ -770,6 +750,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       Country: txCountry(tx),
       Date: txDate(tx),
       TxId: getTxIdAny(tx) || "",
+      CountryRaw: getTxCountryRawNorm(tx) || "",
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -805,7 +786,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
             <div className="text-xs text-slate-500">
               {activeAccount ? activeAccount.name : "No active account"}
               <span className="ml-2">
-                • Source: <span className="font-semibold">LIVE</span>
+                • Source: <span className="font-semibold">{mode}</span>
               </span>
               {serverCount != null ? (
                 <span className="ml-2 text-slate-400">• serverCount: {serverCount}</span>
@@ -1001,7 +982,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div className="text-sm font-semibold text-slate-800">Total Summary</div>
 
-            <div className="text-xs text-slate-600">
+            {/* <div className="text-xs text-slate-600">
               Total: <span className="font-semibold">{fmtUsd(calcGrand.total.amountCents)}</span>{" "}
               <span className="text-slate-500">({calcGrand.total.count} tx)</span>
               {summaryStatusKeys.map((k) => {
@@ -1015,11 +996,11 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
                   </span>
                 );
               })}
-            </div>
+            </div> */}
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            {calcNonUsAndUs.map((b) => (
+            {calcBuckets.map((b) => (
               <div
                 key={b.key}
                 className="rounded-2xl border border-slate-200 bg-slate-50/40 px-4 py-3"
@@ -1079,7 +1060,15 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
             <button
               type="button"
-              onClick={onNext}
+              onClick={async () => {
+                const nextPage = page + 1;
+                await ensureDataForPage(nextPage);
+
+                const need = (nextPage + 1) * pageSize;
+                if (items.length < need && !nextCursor) return;
+
+                setPage(nextPage);
+              }}
               disabled={fetching || (page + 1 >= totalPages && !nextCursor)}
               className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
