@@ -9,6 +9,7 @@ import { GoHistory } from "react-icons/go";
 import { FaCreditCard, FaLayerGroup  } from "react-icons/fa";
 import { SiVirtualbox } from "react-icons/si";
 import { MdOutlineCategory } from "react-icons/md";
+import { RiLockPasswordLine } from "react-icons/ri";
 import { useSidebar } from "../context/SidebarContext";
 
 type NavItem = {
@@ -44,7 +45,13 @@ const navItems: NavItem[] = [
     icon: <MdOutlineCategory />,
     name: "Merchant",
     path: "/merchant",
+  },
+  {
+    icon: <RiLockPasswordLine/>,
+    name: "Change Password",
+    path: "/profile/change-password",
   }
+
 ];
 
 

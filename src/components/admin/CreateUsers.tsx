@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import { IoAddOutline } from "react-icons/io5";
 import { MdDeleteOutline } from "react-icons/md";
+import { RiLockPasswordLine } from "react-icons/ri";
 import "react-toastify/dist/ReactToastify.css";
 
 import AddEditModal from "../common/AddEditModal";
@@ -13,8 +14,10 @@ import {
   AuthGetUsers,
   AuthDeleteUser,
   AuthUpdateUser,
+  AuthAdminChangePassword,
 } from "../../api/api.auth";
-import {
+
+import type {
   ApiCreateUserParam,
   ApiUpdateUserParam,
   Auth,
@@ -41,6 +44,10 @@ export default function CreateUserAdmin() {
   const isAdmin = currentUser?.role === "ROLE_ADMIN";
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+
+  // ✅ modal reset password
+  const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [pwUser, setPwUser] = useState<Auth | null>(null);
 
   const loadUsers = async (pageNumber = 0) => {
     try {
@@ -72,6 +79,7 @@ export default function CreateUserAdmin() {
     if (!isAdmin) return;
     loadUsers(0);
     loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
   const virtualAccountsByAccountId = useMemo(() => {
@@ -90,16 +98,13 @@ export default function CreateUserAdmin() {
   const toNumberArray = (value: any): number[] => {
     if (!value) return [];
     if (Array.isArray(value)) {
-      return value
-        .map((v) => Number(v))
-        .filter((v) => !Number.isNaN(v));
+      return value.map((v) => Number(v)).filter((v) => !Number.isNaN(v));
     }
     const n = Number(value);
     return Number.isNaN(n) ? [] : [n];
   };
 
-
-  const handleAdd = async (data: any) => {
+  const handleAdd = async (data: any): Promise<void> => {
     const accountIds = toNumberArray(data.accountIds);
     const virtualAccountIds = toNumberArray(data.virtualAccountIds);
 
@@ -141,7 +146,7 @@ export default function CreateUserAdmin() {
     }
   };
 
-  const handleUpdate = async (data: any) => {
+  const handleUpdate = async (data: any): Promise<void> => {
     if (!editingUser) return;
 
     const accountIds = toNumberArray(data.accountIds);
@@ -198,6 +203,41 @@ export default function CreateUserAdmin() {
     }
   };
 
+  // ✅ admin reset password
+  const handleChangePassword = async (data: any): Promise<void> => {
+    if (!pwUser) return;
+
+    const newPassword = (data.newPassword || "").trim();
+    const confirmPassword = (data.confirmPassword || "").trim();
+
+    if (!newPassword) {
+      toast.error("New password must not be empty!");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password min 6 chars!");
+      return;
+    }
+    if (!confirmPassword) {
+      toast.error("Confirm password must not be empty!");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match!");
+      return;
+    }
+
+    try {
+      await AuthAdminChangePassword(pwUser.id, { newPassword, confirmPassword });
+      toast.success("Password changed successfully!");
+      setPwModalOpen(false);
+      setPwUser(null);
+    } catch (e) {
+      console.error(e);
+      toast.error("Change password failed!");
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="bg-white rounded-2xl shadow p-6">
@@ -216,19 +256,15 @@ export default function CreateUserAdmin() {
 
   const handlePrevPage = () => {
     if (page <= 0) return;
-    const newPage = page - 1;
-    loadUsers(newPage);
+    loadUsers(page - 1);
   };
 
   const handleNextPage = () => {
     if (page >= totalPages - 1) return;
-    const newPage = page + 1;
-    loadUsers(newPage);
+    loadUsers(page + 1);
   };
 
-  const editingAccountIds =
-    editingUser?.accounts?.map((acc) => acc.id) ?? [];
-
+  const editingAccountIds = editingUser?.accounts?.map((acc) => acc.id) ?? [];
   const editingVirtualAccountIds =
     editingUser?.virtualAccounts?.map((va) => va.id) ?? [];
 
@@ -237,40 +273,34 @@ export default function CreateUserAdmin() {
       <ToastContainer style={{ zIndex: 1000000 }} />
 
       <div className="flex items-center justify-between mb-4">
-         <div>
-            <ol className="flex items-center gap-1.5">
-        <li>
-          <Link
-            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400"
-            to="/admin"
-          >
-            Home
-            <svg
-              className="stroke-current"
-              width="17"
-              height="16"
-              viewBox="0 0 17 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M6.0765 12.667L10.2432 8.50033L6.0765 4.33366"
-                stroke=""
-                stroke-width="1.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ></path>
-            </svg>
-          </Link>
-        </li>
-        <li
-          className="text-sm font-semibold text-gray-800"
-          x-text="pageName"
-        >
-          {" "}
-          User Management
-        </li>
-      </ol>
+        <div>
+          <ol className="flex items-center gap-1.5">
+            <li>
+              <Link
+                className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400"
+                to="/admin"
+              >
+                Home
+                <svg
+                  className="stroke-current"
+                  width="17"
+                  height="16"
+                  viewBox="0 0 17 16"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M6.0765 12.667L10.2432 8.50033L6.0765 4.33366"
+                    stroke=""
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  ></path>
+                </svg>
+              </Link>
+            </li>
+            <li className="text-sm font-semibold text-gray-800">User Management</li>
+          </ol>
         </div>
 
         <button
@@ -290,30 +320,21 @@ export default function CreateUserAdmin() {
             <div className="w-10 h-10 border-4 border-t-blue-500 border-gray-300 rounded-full animate-spin"></div>
           </div>
         ) : users.length === 0 ? (
-          <div className="py-6 text-center text-gray-400 italic">
-            No users found
-          </div>
+          <div className="py-6 text-center text-gray-400 italic">No users found</div>
         ) : (
           <>
             <table className="min-w-full text-sm text-gray-700">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="py-3 px-4 text-left font-semibold">
-                    Username
-                  </th>
+                  <th className="py-3 px-4 text-left font-semibold">Username</th>
                   <th className="py-3 px-4 text-left font-semibold">Role</th>
                   <th className="py-3 px-4 text-left font-semibold">Date</th>
-                  <th className="py-3 px-4 text-center font-semibold">
-                    Actions
-                  </th>
+                  <th className="py-3 px-4 text-center font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className="border-t hover:bg-gray-50 transition-colors"
-                  >
+                  <tr key={u.id} className="border-t hover:bg-gray-50 transition-colors">
                     <td className="py-3 px-4">{u.username}</td>
                     <td className="py-3 px-4">
                       <span
@@ -327,9 +348,7 @@ export default function CreateUserAdmin() {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      {u.createdAt
-                        ? new Date(u.createdAt).toLocaleString("vi-VN")
-                        : "-"}
+                      {u.createdAt ? new Date(u.createdAt).toLocaleString("vi-VN") : "-"}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-2">
@@ -343,7 +362,19 @@ export default function CreateUserAdmin() {
                           Edit
                         </button>
 
-                          <button
+                        <button
+                          onClick={() => {
+                            setPwUser(u);
+                            setPwModalOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center px-2 py-1 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+                          title="Reset password"
+                        >
+                          <RiLockPasswordLine className="mr-1" />
+                          Password
+                        </button>
+
+                        <button
                           disabled={currentUser?.id === u.id}
                           onClick={() => {
                             setDeleteId(u.id);
@@ -367,8 +398,7 @@ export default function CreateUserAdmin() {
 
             <div className="flex items-center justify-between px-4 py-3 border-t bg_white">
               <p className="text-xs text-gray-500">
-                Page {page + 1} of {Math.max(totalPages, 1)} •{" "}
-                {totalElements} users
+                Page {page + 1} of {Math.max(totalPages, 1)} • {totalElements} users
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -430,10 +460,7 @@ export default function CreateUserAdmin() {
                   label: "Slash Accounts",
                   type: "multiselect",
                   defaultValue: editingAccountIds,
-                  options: accounts.map((acc) => ({
-                    label: acc.name,
-                    value: acc.id,
-                  })),
+                  options: accounts.map((acc) => ({ label: acc.name, value: acc.id })),
                 },
                 {
                   name: "virtualAccountIds",
@@ -442,30 +469,24 @@ export default function CreateUserAdmin() {
                   defaultValue: editingVirtualAccountIds,
                   dependsOn: "accountIds",
                   optionsFn: (formValues: any) => {
-                    const selectedAccountIds = toNumberArray(
-                      formValues.accountIds
-                    );
+                    const selectedAccountIds = toNumberArray(formValues.accountIds);
                     const opts: { label: string; value: number }[] = [];
                     selectedAccountIds.forEach((aid) => {
                       const list = virtualAccountsByAccountId[aid] || [];
-                      list.forEach((x) =>
-                        opts.push({ label: x.label, value: x.id })
-                      );
+                      list.forEach((x) => opts.push({ label: x.label, value: x.id }));
                     });
                     return opts;
                   },
                 },
               ]
             : [
-                {
-                  name: "username",
-                  label: "Username",
-                  type: "text",
-                },
+                { name: "username", label: "Username", type: "text" },
                 {
                   name: "password",
                   label: "Password",
                   type: "password",
+                  togglePassword: true, // ✅ show/hide
+                  autoComplete: "new-password",
                 },
                 {
                   name: "role",
@@ -482,10 +503,7 @@ export default function CreateUserAdmin() {
                   label: "Slash Accounts",
                   type: "multiselect",
                   defaultValue: [],
-                  options: accounts.map((acc) => ({
-                    label: acc.name,
-                    value: acc.id,
-                  })),
+                  options: accounts.map((acc) => ({ label: acc.name, value: acc.id })),
                 },
                 {
                   name: "virtualAccountIds",
@@ -494,15 +512,11 @@ export default function CreateUserAdmin() {
                   defaultValue: [],
                   dependsOn: "accountIds",
                   optionsFn: (formValues: any) => {
-                    const selectedAccountIds = toNumberArray(
-                      formValues.accountIds
-                    );
+                    const selectedAccountIds = toNumberArray(formValues.accountIds);
                     const opts: { label: string; value: number }[] = [];
                     selectedAccountIds.forEach((aid) => {
                       const list = virtualAccountsByAccountId[aid] || [];
-                      list.forEach((x) =>
-                        opts.push({ label: x.label, value: x.id })
-                      );
+                      list.forEach((x) => opts.push({ label: x.label, value: x.id }));
                     });
                     return opts;
                   },
@@ -513,6 +527,32 @@ export default function CreateUserAdmin() {
         onCancel={() => {
           setAddModalOpen(false);
           setEditingUser(null);
+        }}
+      />
+
+      <AddEditModal
+        show={pwModalOpen}
+        title={`Reset Password${pwUser?.username ? ` • ${pwUser.username}` : ""}`}
+        fields={[
+          {
+            name: "newPassword",
+            label: "New Password",
+            type: "password",
+            togglePassword: true, // ✅ show/hide
+            autoComplete: "new-password",
+          },
+          {
+            name: "confirmPassword",
+            label: "Confirm Password",
+            type: "password",
+            togglePassword: true, // ✅ show/hide
+            autoComplete: "new-password",
+          },
+        ]}
+        onSubmit={handleChangePassword}
+        onCancel={() => {
+          setPwModalOpen(false);
+          setPwUser(null);
         }}
       />
     </div>

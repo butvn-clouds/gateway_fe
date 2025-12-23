@@ -128,3 +128,28 @@ export const AuthDeleteUser = async (id: number): Promise<void> => {
     headers: { Authorization: `Bearer ${token}` },
   });
 };
+export type ApiChangePasswordParam = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
+export type ApiAdminResetPasswordParam = {
+  newPassword: string;
+  confirmPassword: string;
+};
+
+// ✅ user tự đổi mật khẩu
+export const AuthChangePassword = async (payload: ApiChangePasswordParam) => {
+  const res = await api.post(`/api/auth/change-password`, payload);
+  return res.data;
+};
+
+// ✅ admin reset mật khẩu user khác
+export const AuthAdminChangePassword = async (
+  userId: number,
+  payload: ApiAdminResetPasswordParam
+) => {
+  const res = await api.post(`/api/auth/users/${userId}/change-password`, payload);
+  return res.data;
+};

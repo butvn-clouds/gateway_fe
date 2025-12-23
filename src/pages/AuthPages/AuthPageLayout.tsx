@@ -1,5 +1,5 @@
 import React from "react";
-import bg from "../../assets/images/bg.jpg";
+import bg from "../../assets/images/bg-1.jpeg";
 
 export default function AuthLayout({
   children,

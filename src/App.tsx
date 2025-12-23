@@ -12,6 +12,7 @@ import CardGroupPage from "./pages/Cards/CardGroupPage";
 import MerchantPage from "./pages/Merchant/MerchantPage";
 import CardPage from "./pages/Cards/CardPage";
 import TransactionPage from "./pages/Transaction/TransactionPage";
+import ChangePasswordPage from "./pages/AuthPages/ChangePasswordPage";
 
 export default function App() {
   return (
@@ -29,6 +30,10 @@ export default function App() {
             <Route path="/merchant" element={<MerchantPage />} />
             <Route path="/card" element={<CardPage />} />
             <Route path="/" element={<TransactionPage />} />
+            <Route
+              path="/profile/change-password"
+              element={<ChangePasswordPage />}
+            />
           </Route>
         </Route>
         <Route path="*" element={<NotFound />} />

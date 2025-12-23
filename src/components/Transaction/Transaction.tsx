@@ -9,7 +9,6 @@ import type {
   VirtualAccount,
   Card,
   TransactionItemDTO,
-  TransactionCursorScanDTO,
 } from "../../types/Types";
 
 import * as XLSX from "xlsx";
@@ -65,6 +64,20 @@ const fmtUsd = (cents?: number | null) => {
     : abs.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
   return `${sign}${v} USD`;
+};
+
+const moneyClass = (cents?: number | null) => {
+  const v = Number(cents ?? 0);
+  if (!Number.isFinite(v) || v === 0) return "text-slate-900";
+  return v < 0 ? "text-red-600" : "text-green-600";
+};
+
+const sanitizeFilename = (name: string) => {
+  const safe = (name || "account")
+    .replace(/[\/\\:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return safe.slice(0, 80) || "account";
 };
 
 const setIf = (q: Record<string, any>, key: string, val: any) => {
@@ -142,8 +155,8 @@ type CountryBucketKey = "NON_US" | "US" | "UNKNOWN";
 type CountryCalc = {
   key: CountryBucketKey;
   label: string;
-  total: Sum; 
-  byStatus: Record<StatusKey, Sum>; 
+  total: Sum;
+  byStatus: Record<StatusKey, Sum>;
 };
 
 const initStatusMap = (): Record<StatusKey, Sum> => {
@@ -232,7 +245,6 @@ const getTxCountryNorm = (tx: any): string => {
 const getTxCountryRawNorm = (tx: any): string =>
   normalizeCountry(getTxCountryRaw(tx));
 
-
 const getTxIdAny = (tx: any): string => {
   const candidates = [
     tx?.id,
@@ -288,7 +300,6 @@ const dedupeTx = <T,>(arr: T[]): T[] => {
   return out;
 };
 
-
 const amountCentsNormalized = (tx: any): number => {
   const raw = Math.trunc(Number(tx?.amountCents ?? 0) || 0);
   if (!Number.isFinite(raw) || raw === 0) return 0;
@@ -297,7 +308,7 @@ const amountCentsNormalized = (tx: any): number => {
 
 type DataSourceMode = "LIVE";
 
-export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
+export const TransactionManager: React.FC<Props> = ({ pageSize = 50 }) => {
   const { user, loading } = useAuth();
 
   const accounts: Account[] = useMemo(() => user?.accounts ?? [], [user]);
@@ -323,8 +334,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
 
-  const [totalWant] = useState<number>(50000);
-
   const thisYear = new Date().getFullYear();
   const [yearPreset, setYearPreset] = useState<number | "">("");
 
@@ -332,10 +341,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   const [serverCount, setServerCount] = useState<number | null>(null);
-
-  const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] =
-    useState<TransactionCursorScanDTO | null>(null);
 
   const [loadingVa, setLoadingVa] = useState(false);
   const [accountVAs, setAccountVAs] = useState<VirtualAccount[]>([]);
@@ -356,7 +361,8 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     const ymd = toYmd(now);
     setFromDate(ymd);
     setToDate(ymd);
-  }, [activeAccountId]); 
+  }, [activeAccountId]);
+
   useEffect(() => {
     if (!yearPreset) return;
     const y = Number(yearPreset);
@@ -472,7 +478,11 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     setIf(params, "filter:to_date", localDayEndMs(td));
     setIf(params, "filter:cardId", selectedCardSlashId);
 
-    setIf(params, "filter:detailed_status", status ? String(status).toLowerCase() : "");
+    setIf(
+      params,
+      "filter:detailed_status",
+      status ? String(status).toLowerCase() : ""
+    );
     setIf(params, "filter:country", country);
 
     return params;
@@ -517,7 +527,9 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       setServerCount(sc);
 
       setItems((prev) => {
-        const merged = append ? [...(prev ?? []), ...(newItems ?? [])] : (newItems ?? []);
+        const merged = append
+          ? [...(prev ?? []), ...(newItems ?? [])]
+          : (newItems ?? []);
         return dedupeTx(merged);
       });
 
@@ -570,34 +582,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     pageSize,
   ]);
 
-  const scanPages = async () => {
-    if (!activeAccountId) return;
-
-    setScanning(true);
-    setScanResult(null);
-    try {
-      const params: any = { accountId: activeAccountId, maxPages: 500 };
-      if (selectedVaId != null) params.virtualAccountId = selectedVaId;
-
-      const fd = fromDate || toYmd(new Date());
-      const td = toDate || toYmd(new Date());
-
-      setIf(params, "filter:from_date", localDayStartMs(fd));
-      setIf(params, "filter:to_date", localDayEndMs(td));
-      setIf(params, "filter:cardId", selectedCardSlashId);
-      setIf(params, "filter:detailed_status", status ? String(status).toLowerCase() : "");
-      setIf(params, "filter:country", country);
-
-      const res = await api.get<TransactionCursorScanDTO>("/api/transactions/scan", { params });
-      setScanResult(res.data);
-      toast.success("Scan completed");
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e?.response?.data?.message || "Scan failed");
-    } finally {
-      setScanning(false);
-    }
-  };
+  
 
   const cardLabel = (tx: TransactionItemDTO) => {
     const slashId = (tx as any).cardId;
@@ -606,10 +591,15 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
   };
 
   const txDescription = (tx: TransactionItemDTO) =>
-    (tx as any).description || (tx as any).memo || (tx as any).merchantDescription || "—";
+    (tx as any).description ||
+    (tx as any).memo ||
+    (tx as any).merchantDescription ||
+    "—";
 
   const txMerchant = (tx: TransactionItemDTO) =>
-    (tx as any).merchantDescription || (tx as any)?.merchantData?.description || "—";
+    (tx as any).merchantDescription ||
+    (tx as any)?.merchantData?.description ||
+    "—";
 
   const txCountry = (tx: TransactionItemDTO) => getTxCountryNorm(tx) || "—";
 
@@ -646,7 +636,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
     return base;
   }, [items, country, status]);
-
 
   const calcBuckets = useMemo<CountryCalc[]>(() => {
     const base = dedupeTx(filteredItems ?? []);
@@ -687,24 +676,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
     return unknown.total.count > 0 ? [nonUs, us, unknown] : [nonUs, us];
   }, [filteredItems]);
-
-  const calcGrand = useMemo(() => {
-    const byStatus = initStatusMap();
-    const total: Sum = { count: 0, amountCents: 0 };
-
-    for (const b of calcBuckets) {
-      total.count += b.total.count;
-      total.amountCents += b.total.amountCents;
-
-      for (const k of STATUS_ORDER) {
-        const v = b.byStatus[k];
-        byStatus[k].count += v.count;
-        byStatus[k].amountCents += v.amountCents;
-      }
-    }
-
-    return { total, byStatus };
-  }, [calcBuckets]);
 
   const totalLoaded = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalLoaded / pageSize));
@@ -758,7 +729,12 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
     XLSX.utils.book_append_sheet(wb, ws, "Transactions");
 
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    const fileName = `transactions_${activeAccountId || "account"}_${Date.now()}.xlsx`;
+
+    const accName = sanitizeFilename(
+      activeAccount?.name || `account_${activeAccountId ?? "unknown"}`
+    );
+    const fileName = `transactions_${accName}_${Date.now()}.xlsx`;
+
     saveAs(new Blob([buf], { type: "application/octet-stream" }), fileName);
   };
 
@@ -781,15 +757,21 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
       <div className="rounded-3xl bg-white shadow-sm border border-slate-200/70 px-5 py-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
-            <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">Dashboard</div>
-            <div className="text-3xl font-semibold text-slate-900">Transactions</div>
+            <div className="text-xs uppercase tracking-[0.16em] text-indigo-500">
+              Dashboard
+            </div>
+            <div className="text-3xl font-semibold text-slate-900">
+              Transactions
+            </div>
             <div className="text-xs text-slate-500">
               {activeAccount ? activeAccount.name : "No active account"}
               <span className="ml-2">
                 • Source: <span className="font-semibold">{mode}</span>
               </span>
               {serverCount != null ? (
-                <span className="ml-2 text-slate-400">• serverCount: {serverCount}</span>
+                <span className="ml-2 text-slate-400">
+                  • serverCount: {serverCount}
+                </span>
               ) : null}
               {safeTotalWant ? (
                 <span className="ml-2 text-slate-400">• total={safeTotalWant}</span>
@@ -807,14 +789,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
               {fetching ? "Loading..." : "Refresh"}
             </button>
 
-            <button
-              type="button"
-              onClick={scanPages}
-              disabled={scanning || !activeAccountId}
-              className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {scanning ? "Scanning..." : "Scan pages"}
-            </button>
 
             <button
               type="button"
@@ -981,22 +955,6 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
         <div className="rounded-3xl bg-white border border-slate-200/70 px-5 py-4">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div className="text-sm font-semibold text-slate-800">Total Summary</div>
-
-            {/* <div className="text-xs text-slate-600">
-              Total: <span className="font-semibold">{fmtUsd(calcGrand.total.amountCents)}</span>{" "}
-              <span className="text-slate-500">({calcGrand.total.count} tx)</span>
-              {summaryStatusKeys.map((k) => {
-                const v = calcGrand.byStatus[k];
-                const label = STATUS_LABEL[k];
-                return (
-                  <span key={k}>
-                    {" • "}
-                    {label}: <span className="font-semibold">{fmtUsd(v.amountCents)}</span>{" "}
-                    <span className="text-slate-500">({v.count} tx)</span>
-                  </span>
-                );
-              })}
-            </div> */}
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1007,13 +965,17 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
               >
                 <div className="text-sm font-semibold text-slate-900">
                   {b.label}{" "}
-                  <span className="text-slate-500 font-medium">({b.total.count} transactions)</span>
+                  <span className="text-slate-500 font-medium">
+                    ({b.total.count} transactions)
+                  </span>
                 </div>
 
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Total Amount:</span>
-                    <span className="font-semibold text-slate-900">{fmtUsd(b.total.amountCents)}</span>
+                    <span className={`font-semibold ${moneyClass(b.total.amountCents)}`}>
+                      {fmtUsd(b.total.amountCents)}
+                    </span>
                   </div>
 
                   {summaryStatusKeys.map((k) => {
@@ -1022,7 +984,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
                     return (
                       <div key={k} className="flex justify-between">
                         <span className="text-slate-500">{label}:</span>
-                        <span className="font-semibold text-slate-900">
+                        <span className={`font-semibold ${moneyClass(v.amountCents)}`}>
                           {fmtUsd(v.amountCents)}{" "}
                           <span className="text-slate-500 font-medium">({v.count})</span>
                         </span>
@@ -1060,15 +1022,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
 
             <button
               type="button"
-              onClick={async () => {
-                const nextPage = page + 1;
-                await ensureDataForPage(nextPage);
-
-                const need = (nextPage + 1) * pageSize;
-                if (items.length < need && !nextCursor) return;
-
-                setPage(nextPage);
-              }}
+              onClick={onNext}
               disabled={fetching || (page + 1 >= totalPages && !nextCursor)}
               className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -1084,16 +1038,16 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200">
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">Card</th>
+                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
+                  Card
+                </th>
                 <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
                   Amount
                 </th>
                 <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
                   Status
                 </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
-                  Reason
-                </th>
+           
                 <th className="px-4 py-3 text-left text-[12px] font-semibold text-slate-400">
                   Description
                 </th>
@@ -1125,7 +1079,9 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
               ) : (
                 pageItems.map((tx: any) => (
                   <tr key={txKey(tx)} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-900">{cardLabel(tx)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-900">
+                      {cardLabel(tx)}
+                    </td>
 
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span
@@ -1143,21 +1099,21 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
                       {tx.detailedStatus || "—"}
                     </td>
 
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">
-                      {tx.declineReason || tx.approvalReason || "—"}
-                    </td>
-
                     <td className="px-4 py-3 text-slate-700 max-w-[360px]">
-                      <div className="truncate">{txDescription(tx)}</div>
+                      <div className="truncate">{txDescription(tx)} — {tx.declineReason || tx.approvalReason}</div>
                     </td>
 
                     <td className="px-4 py-3 text-slate-700 max-w-[260px]">
                       <div className="truncate">{txMerchant(tx)}</div>
                     </td>
 
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">{txCountry(tx)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">
+                      {txCountry(tx)}
+                    </td>
 
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">{txDate(tx)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">
+                      {txDate(tx)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -1181,13 +1137,7 @@ export const TransactionManager: React.FC<Props> = ({ pageSize = 20 }) => {
         )}
       </div>
 
-      {scanResult ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 text-xs text-slate-600">
-          <div className="font-semibold text-slate-800 mb-1">Scan Result</div>
-          <pre className="whitespace-pre-wrap">{JSON.stringify(scanResult, null, 2)}</pre>
-        </div>
-      ) : null}
-    </div>
+      </div>
   );
 };
 
