@@ -1,13 +1,33 @@
-import React, { createContext, useState, useEffect, useContext } from "react";
+import React, { createContext, useEffect, useContext, useState } from "react";
 import { AuthLogin, AuthCheck, AuthLogout } from "../api/api.auth";
 import { Auth, AuthContextTypes } from "../types/Types";
 
 export const AuthContext = createContext<AuthContextTypes | null>(null);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+type AuthCheckResponse = {
+  user: Auth;
+  token?: string;
+  activeAccount?: any; 
+};
+
+const mergeActiveAccount = (res: AuthCheckResponse): Auth => {
+  const u: any = res.user;
+
+  if (res.activeAccount) {
+    u.activeAccount = res.activeAccount;
+  } else if (!u.activeAccount && (u as any).activeAccountId) {
+  }
+
+  return u as Auth;
+};
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<Auth | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ load session on mount
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -16,7 +36,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     AuthCheck()
-      .then((res) => setUser(res.user))
+      .then((res: AuthCheckResponse) => {
+        if (res?.token) localStorage.setItem("token", res.token);
+        setUser(mergeActiveAccount(res));
+      })
       .catch(() => {
         localStorage.removeItem("token");
         setUser(null);
@@ -25,18 +48,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (username: string, password: string) => {
-    const res = await AuthLogin({ username, password });
-    setUser(res.user);
+    const res: any = await AuthLogin({ username, password });
+
+    if (res?.token) localStorage.setItem("token", res.token);
+
+    if (res?.activeAccount) {
+      const u: any = res.user;
+      u.activeAccount = res.activeAccount;
+      setUser(u);
+      return;
+    }
+
+    const chk: AuthCheckResponse = await AuthCheck();
+    if (chk?.token) localStorage.setItem("token", chk.token);
+    setUser(mergeActiveAccount(chk));
   };
 
   const logout = async () => {
-    await AuthLogout();
-    setUser(null);
+    try {
+      await AuthLogout();
+    } finally {
+      localStorage.removeItem("token");
+      setUser(null);
+    }
   };
 
-  const checkAuth = async () => {
-    const res = await AuthCheck();
-    setUser(res.user);
+  const checkAuth = async (): Promise<void> => {
+    const res: AuthCheckResponse = await AuthCheck();
+    if (res?.token) localStorage.setItem("token", res.token);
+    setUser(mergeActiveAccount(res));
   };
 
   return (
@@ -45,6 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context)

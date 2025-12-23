@@ -13,6 +13,7 @@ import MerchantPage from "./pages/Merchant/MerchantPage";
 import CardPage from "./pages/Cards/CardPage";
 import TransactionPage from "./pages/Transaction/TransactionPage";
 import ChangePasswordPage from "./pages/AuthPages/ChangePasswordPage";
+import GatewaySlashDocs from './components/ui/doc';
 
 export default function App() {
   return (
@@ -34,6 +35,8 @@ export default function App() {
               path="/profile/change-password"
               element={<ChangePasswordPage />}
             />
+                        <Route path="/docs" element={<GatewaySlashDocs />} />
+
           </Route>
         </Route>
         <Route path="*" element={<NotFound />} />
